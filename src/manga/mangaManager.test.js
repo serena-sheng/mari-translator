@@ -307,7 +307,7 @@ describe("MangaManager", () => {
     manager.stop();
   });
 
-  test("悬浮开关只切换显隐，不重新请求接口", async () => {
+  test("悬浮开关在「嵌字 → 侧栏弹幕 → 原图」之间循环，且不重新请求接口", async () => {
     const manager = createManager();
     const img = createImage();
     manager.start();
@@ -316,17 +316,134 @@ describe("MangaManager", () => {
     await flush();
 
     const toggle = document.querySelector(".kiss-manga-toggle");
+    const click = () =>
+      toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
     expect(toggle).not.toBeNull();
     expect(toggle.textContent).toBe("漫");
+    expect(overlayOf()).not.toBeNull();
 
-    toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(overlayOf().style.display).toBe("none");
+    // 第二次：切到侧栏弹幕（覆盖层撤掉，换成两侧栏）
+    click();
+    expect(toggle.textContent).toBe("幕");
+    expect(overlayOf()).toBeNull();
+    expect(document.querySelectorAll(".kiss-manga-gutter")).toHaveLength(2);
+    expect(
+      document.querySelectorAll(".kiss-manga-danmaku").length
+    ).toBeGreaterThan(0);
+
+    // 第三次：回到原图（栏位整体隐藏）
+    click();
     expect(toggle.textContent).toBe("原");
+    document.querySelectorAll(".kiss-manga-gutter").forEach((el) => {
+      expect(el.style.display).toBe("none");
+    });
 
-    toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(overlayOf().style.display).toBe("");
+    // 第四次：回到嵌字
+    click();
     expect(toggle.textContent).toBe("漫");
+    expect(overlayOf()).not.toBeNull();
+
     expect(callVisionApi).toHaveBeenCalledTimes(1);
+    manager.stop();
+  });
+
+  test("悬浮开关的三种状态有各自的文案与配色，且 dataset.state 同步", async () => {
+    const manager = createManager();
+    const img = createImage();
+    manager.start();
+    await flush();
+    MockIntersectionObserver.instances[0].trigger(img);
+    await flush();
+
+    const toggle = document.querySelector(".kiss-manga-toggle");
+    const click = () =>
+      toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const seen = [];
+
+    // 嵌字 → 侧栏弹幕 → 原图 → 嵌字，采集每一态的（文案, 配色）
+    for (let i = 0; i < 4; i += 1) {
+      seen.push([
+        toggle.textContent,
+        toggle.dataset.state,
+        toggle.style.background,
+      ]);
+      click();
+    }
+
+    expect(seen.map(([label, state]) => [label, state])).toEqual([
+      ["漫", "overlay"],
+      ["幕", "danmaku"],
+      ["原", "off"],
+      ["漫", "overlay"],
+    ]);
+    // 三种状态两两配色都不同，用户一眼能看出当前模式
+    const backgrounds = new Set(seen.slice(0, 3).map(([, , bg]) => bg));
+    expect(backgrounds.size).toBe(3);
+
+    manager.stop();
+  });
+
+  test("侧栏弹幕：按左右分栏、统一字号，并按锚点向下堆积不重叠", async () => {
+    callVisionApi.mockResolvedValue(
+      JSON.stringify([
+        {
+          box: [40, 100, 200, 300],
+          src: "",
+          dst: "左边的台词",
+          vertical: false,
+        },
+        {
+          box: [60, 140, 220, 320],
+          src: "",
+          dst: "左边更靠下的台词",
+          vertical: false,
+        },
+        {
+          box: [600, 200, 760, 400],
+          src: "",
+          dst: "右边的台词",
+          vertical: true,
+        },
+      ])
+    );
+
+    const manager = createManager();
+    const img = createImage(); // 800×1200，中缝在 x=400
+    manager.start();
+    await flush();
+    MockIntersectionObserver.instances[0].trigger(img);
+    await flush();
+
+    document
+      .querySelector(".kiss-manga-toggle")
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const gutters = document.querySelectorAll(".kiss-manga-gutter");
+    expect(gutters).toHaveLength(2);
+    const [leftGutter, rightGutter] = gutters;
+    expect(leftGutter.dataset.side).toBe("left");
+    expect(rightGutter.dataset.side).toBe("right");
+
+    // 气泡水平中心在中缝左侧的进左栏，右侧的进右栏
+    const left = [...leftGutter.querySelectorAll(".kiss-manga-danmaku")];
+    const right = [...rightGutter.querySelectorAll(".kiss-manga-danmaku")];
+    expect(left.map((el) => el.textContent)).toEqual([
+      "左边的台词",
+      "左边更靠下的台词",
+    ]);
+    expect(right.map((el) => el.textContent)).toEqual(["右边的台词"]);
+
+    // 统一横排、统一字号（竖排气泡也只按横排渲染）
+    const all = [...document.querySelectorAll(".kiss-manga-danmaku")];
+    const sizes = new Set(all.map((el) => el.style.fontSize));
+    expect(sizes.size).toBe(1);
+    expect(all.every((el) => el.style.writingMode === "")).toBe(true);
+
+    // 同栏内按锚点顺排，第二条被推到第一条下方（jsdom 无布局，用兜底行高推进）
+    const firstTop = parseFloat(left[0].style.top);
+    const secondTop = parseFloat(left[1].style.top);
+    expect(secondTop).toBeGreaterThanOrEqual(firstTop + 6);
 
     manager.stop();
   });

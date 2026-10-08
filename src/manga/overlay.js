@@ -1,49 +1,56 @@
 /**
  * @file overlay.js
- * @description 漫画译文的页面覆盖层与悬浮开关。
+ * @description 漫画译文的两种显示方式与悬浮开关。
  *
- * 刻意不使用项目的 ShadowDomManager 来挂覆盖层：它的 `show()` 二次调用不会
- * 刷新已挂载实例的 props（见 shadowDomManager.js 中的 REVIEW 说明），而漫画
- * 覆盖层需要「按图片逐个挂载 / 更新 / 移除」，用原生 DOM 更直接可控。
+ * 1. `overlay`（嵌字）：在图片上按气泡坐标铺译文块（原行为）。
+ * 2. `danmaku`（侧栏弹幕）：把图片压窄，在两侧腾出栏位，译文像弹幕一样贴在栏里，
+ *    纵向与原文位置对齐、逐条向下堆积不重叠、统一横排字号，按气泡左右分栏。
+ *
+ * 刻意不使用项目的 ShadowDomManager 来挂载：它的 `show()` 二次调用不会刷新已挂载
+ * 实例的 props（见 shadowDomManager.js 中的 REVIEW 说明），而这里需要「按图片逐个
+ * 挂载 / 切换模式 / 更新 / 移除」，用原生 DOM 更直接可控。
  * 所有注入元素都带 `notranslate`，避免被自身的网页翻译器二次翻译。
  */
 
 const OVERLAY_CLASS = "kiss-manga-overlay";
 const BUBBLE_CLASS = "kiss-manga-bubble";
+const GUTTER_CLASS = "kiss-manga-gutter";
+const DANMAKU_CLASS = "kiss-manga-danmaku";
 const TOGGLE_CLASS = "kiss-manga-toggle";
 
 // 字号按气泡面积与译文长度估算后的取值区间（px，渲染后的像素）
 const MIN_FONT_SIZE = 9;
 const MAX_FONT_SIZE = 44;
 
+// 侧栏弹幕：栏宽按容器比例取，夹在上下限之间；条目统一字号与行高
+const GUTTER_RATIO = 0.2;
+const GUTTER_MIN_WIDTH = 150;
+const GUTTER_MAX_WIDTH = 300;
+const DANMAKU_FONT_SIZE = 14;
+const DANMAKU_GAP = 6;
+const MIN_IMAGE_WIDTH = 120;
+
+/** 显示方式 */
+export const MODE_MANGA_OVERLAY = "overlay";
+export const MODE_MANGA_DANMAKU = "danmaku";
+
+/** 悬浮开关的三种状态（含关闭） */
+export const TOGGLE_STATE_OFF = "off";
+
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
+const prefersReducedMotion = () =>
+  typeof globalThis.matchMedia === "function" &&
+  globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 /**
- * 在图片父容器内挂载一个与图片边界对齐的覆盖层，并把气泡按百分比坐标铺进去。
- *
- * 坐标使用百分比：图片随窗口缩放时覆盖层自动跟随，无需重算。
- *
- * @param {HTMLImageElement} img 目标图片
- * @param {Object} params
- * @param {Array<Object>} params.bubbles 气泡数组（parseVisionResult 的输出）
- * @param {number} params.naturalWidth 图片原始宽度
- * @param {number} params.naturalHeight 图片原始高度
- * @returns {Object|null} 覆盖层句柄 `{sync, setVisible, destroy}`；无法挂载时返回 null
+ * 嵌字模式：在图片上铺一层按百分比定位的译文块。
+ * @returns {Object} 句柄 `{sync, setVisible, destroy}`
  */
-export const attachOverlay = (
+const createOverlay = (
   img,
   { bubbles = [], naturalWidth = 0, naturalHeight = 0 } = {}
 ) => {
-  const parent = img.parentElement;
-  if (!parent || !naturalWidth || !naturalHeight) return null;
-
-  // 只有父容器原本是 static 时才改成 relative，并记住原值以便恢复
-  const originalPosition = parent.style.position;
-  const positionedByUs = getComputedStyle(parent).position === "static";
-  if (positionedByUs) {
-    parent.style.setProperty("position", "relative");
-  }
-
   const overlay = document.createElement("div");
   overlay.className = `${OVERLAY_CLASS} notranslate`;
   overlay.style.cssText = `position:absolute; pointer-events:none; z-index:10; overflow:visible;`;
@@ -116,6 +123,239 @@ export const attachOverlay = (
     },
     destroy() {
       overlay.remove();
+    },
+  };
+};
+
+/**
+ * 侧栏弹幕模式：把图片压窄，左右各腾一条栏位，译文按原文纵向位置逐条往下堆。
+ *
+ * 左右分栏按气泡水平中心决定；两栏各自「按锚点排序后顺排」，因此既不重叠，
+ * 又尽量贴着原文的纵向位置。
+ *
+ * @returns {Object} 句柄 `{sync, setVisible, destroy}`
+ */
+const createGutters = (
+  img,
+  { bubbles = [], naturalWidth = 0, naturalHeight = 0 } = {}
+) => {
+  const parent = img.parentElement;
+  const parentWidth = parent.clientWidth || img.offsetWidth || 0;
+  const gutterWidth = clamp(
+    Math.round(parentWidth * GUTTER_RATIO),
+    GUTTER_MIN_WIDTH,
+    GUTTER_MAX_WIDTH
+  );
+  const imageWidth = Math.max(parentWidth - gutterWidth * 2, MIN_IMAGE_WIDTH);
+
+  // 记住图片原本的内联样式，退出时还原（页面自己的 CSS 不动）
+  const originalStyle = {
+    width: img.style.width,
+    maxWidth: img.style.maxWidth,
+    height: img.style.height,
+    marginLeft: img.style.marginLeft,
+    marginRight: img.style.marginRight,
+  };
+  // 关键：不只缩宽度，还要左右各留出栏宽的外边距，否则图片（常见左对齐）会和侧栏重叠
+  img.style.width = `${imageWidth}px`;
+  img.style.maxWidth = "none";
+  img.style.height = "auto";
+  img.style.marginLeft = `${gutterWidth}px`;
+  img.style.marginRight = `${gutterWidth}px`;
+
+  const gutters = {
+    left: document.createElement("div"),
+    right: document.createElement("div"),
+  };
+  Object.entries(gutters).forEach(([side, el]) => {
+    el.className = `${GUTTER_CLASS} notranslate`;
+    el.dataset.side = side;
+    el.style.cssText = [
+      "position:absolute",
+      "top:0",
+      "box-sizing:border-box",
+      "overflow:visible",
+      "pointer-events:none",
+      "z-index:10",
+      `width:${gutterWidth}px`,
+    ].join(";");
+    parent.appendChild(el);
+  });
+
+  const mid = naturalWidth / 2;
+  const items = bubbles.map((bubble) => {
+    const [x1, y1, x2] = bubble.box;
+    const side = (x1 + x2) / 2 < mid ? "left" : "right";
+    const el = document.createElement("div");
+    el.className = `${DANMAKU_CLASS} notranslate`;
+    el.dataset.side = side;
+    // 统一横排、统一字号；宽度受栏宽限制，超出即换行
+    el.textContent = String(bubble.dst || "");
+    el.style.cssText = [
+      "position:absolute",
+      "box-sizing:border-box",
+      "width:100%",
+      `font-size:${DANMAKU_FONT_SIZE}px`,
+      "line-height:1.35",
+      "color:#fff",
+      "background:rgba(24,24,27,0.9)",
+      "border-radius:6px",
+      "padding:3px 6px",
+      "overflow-wrap:break-word",
+      "white-space:pre-wrap",
+      "pointer-events:none",
+    ].join(";");
+    gutters[side].appendChild(el);
+    // 入场：从靠图片的一侧滑入，做出弹幕「发射」的感觉（尊重 prefers-reduced-motion）
+    if (!prefersReducedMotion() && typeof el.animate === "function") {
+      const offset = side === "left" ? -14 : 14;
+      el.animate(
+        [
+          { opacity: 0, transform: `translateX(${offset}px)` },
+          { opacity: 1, transform: "translateX(0)" },
+        ],
+        { duration: 180, easing: "ease-out" }
+      );
+    }
+    return { el, side, anchor: y1 };
+  });
+
+  // 撑一条细线在栏的靠图一侧，标出该条弹幕对应的原文纵向位置
+  const markers = items.map(({ el, side, anchor }) => {
+    const mark = document.createElement("div");
+    mark.className = "kiss-manga-marker notranslate";
+    mark.style.cssText = [
+      "position:absolute",
+      "width:4px",
+      "height:2px",
+      "border-radius:1px",
+      "background:rgba(24,24,27,0.55)",
+      side === "left" ? "right:-6px" : "left:-6px",
+    ].join(";");
+    gutters[side].appendChild(mark);
+    return { mark, anchor, side };
+  });
+
+  const sync = () => {
+    const renderedHeight = img.clientHeight || img.offsetHeight;
+    // 栏位贴着图片盒子的左右两侧：左栏占图片左侧的栏宽，右栏接在图片右侧
+    gutters.left.style.top = `${img.offsetTop}px`;
+    gutters.left.style.height = `${img.offsetHeight}px`;
+    gutters.left.style.left = `${img.offsetLeft - gutterWidth}px`;
+    gutters.right.style.top = `${img.offsetTop}px`;
+    gutters.right.style.height = `${img.offsetHeight}px`;
+    gutters.right.style.left = `${img.offsetLeft + img.offsetWidth}px`;
+
+    // 逐栏堆积：先按锚点从上到下排序，再依次下推，保证互不重叠
+    ["left", "right"].forEach((side) => {
+      let bottom = Number.NEGATIVE_INFINITY;
+      items
+        .filter((item) => item.side === side)
+        .sort((a, b) => a.anchor - b.anchor)
+        .forEach((item) => {
+          const desired = (item.anchor / naturalHeight) * renderedHeight;
+          const top = Math.max(desired, bottom + DANMAKU_GAP);
+          item.el.style.top = `${top}px`;
+          bottom = top + (item.el.offsetHeight || DANMAKU_FONT_SIZE * 1.6);
+        });
+    });
+
+    markers.forEach(({ mark, anchor }) => {
+      // 标记只表达纵向位置，横向由所在栏贴边决定
+      mark.style.top = `${(anchor / naturalHeight) * renderedHeight}px`;
+    });
+  };
+
+  sync();
+
+  return {
+    sync,
+    setVisible(visible) {
+      Object.values(gutters).forEach((el) => {
+        el.style.display = visible ? "" : "none";
+      });
+    },
+    destroy() {
+      Object.values(gutters).forEach((el) => el.remove());
+      if (originalStyle.width) img.style.width = originalStyle.width;
+      else img.style.removeProperty("width");
+      if (originalStyle.maxWidth) img.style.maxWidth = originalStyle.maxWidth;
+      else img.style.removeProperty("max-width");
+      if (originalStyle.height) img.style.height = originalStyle.height;
+      else img.style.removeProperty("height");
+      if (originalStyle.marginLeft)
+        img.style.marginLeft = originalStyle.marginLeft;
+      else img.style.removeProperty("margin-left");
+      if (originalStyle.marginRight)
+        img.style.marginRight = originalStyle.marginRight;
+      else img.style.removeProperty("margin-right");
+    },
+  };
+};
+
+/**
+ * 按显示方式在图片上挂载译文层，并支持运行时切换模式。
+ *
+ * @param {HTMLImageElement} img 目标图片
+ * @param {Object} params
+ * @param {Array<Object>} params.bubbles 气泡数组（parseVisionResult 的输出，坐标属于发送给模型的图）
+ * @param {number} params.naturalWidth 发送给模型的图宽
+ * @param {number} params.naturalHeight 发送给模型的图高
+ * @param {string} [params.mode] `overlay`（嵌字）或 `danmaku`（侧栏弹幕）
+ * @returns {Object|null} 句柄 `{mode, setMode, sync, setVisible, destroy}`；无法挂载时返回 null
+ */
+export const attachMangaLayer = (
+  img,
+  {
+    bubbles = [],
+    naturalWidth = 0,
+    naturalHeight = 0,
+    mode = MODE_MANGA_OVERLAY,
+  } = {}
+) => {
+  const parent = img.parentElement;
+  if (!parent || !naturalWidth || !naturalHeight) return null;
+
+  // 只有父容器原本是 static 时才改成 relative，并记住原值以便恢复
+  const originalPosition = parent.style.position;
+  const positionedByUs = getComputedStyle(parent).position === "static";
+  if (positionedByUs) {
+    parent.style.setProperty("position", "relative");
+  }
+
+  let visible = true;
+  let currentMode = null;
+  let handle = null;
+
+  const build = (nextMode) => {
+    handle?.destroy?.();
+    currentMode = nextMode;
+    handle =
+      nextMode === MODE_MANGA_DANMAKU
+        ? createGutters(img, { bubbles, naturalWidth, naturalHeight })
+        : createOverlay(img, { bubbles, naturalWidth, naturalHeight });
+    handle?.setVisible?.(visible);
+  };
+
+  build(mode);
+
+  return {
+    get mode() {
+      return currentMode;
+    },
+    setMode(nextMode) {
+      if (nextMode && nextMode !== currentMode) build(nextMode);
+    },
+    sync() {
+      handle?.sync?.();
+    },
+    setVisible(next) {
+      visible = next;
+      handle?.setVisible?.(next);
+    },
+    destroy() {
+      handle?.destroy?.();
+      handle = null;
       // 只恢复由本模块改写的父容器定位样式
       if (positionedByUs && parent.style.position === "relative") {
         if (originalPosition) {
@@ -128,12 +368,25 @@ export const attachOverlay = (
   };
 };
 
+const TOGGLE_LABELS = {
+  [MODE_MANGA_OVERLAY]: "漫",
+  [MODE_MANGA_DANMAKU]: "幕",
+  [TOGGLE_STATE_OFF]: "原",
+};
+
+// 三种状态的按钮配色：嵌字=深色、侧栏弹幕=蓝色（区别于嵌字）、原图=灰色（关闭态）
+const TOGGLE_BACKGROUNDS = {
+  [MODE_MANGA_OVERLAY]: "rgba(24,24,27,0.86)",
+  [MODE_MANGA_DANMAKU]: "rgba(37,99,235,0.9)",
+  [TOGGLE_STATE_OFF]: "rgba(140,140,140,0.8)",
+};
+
 /**
  * 挂载页面右下角的漫画翻译悬浮开关。
  * @param {Object} params
  * @param {Function} params.onClick 点击回调
  * @param {string} [params.title] 提示文案
- * @returns {Object} 句柄 `{setActive, destroy}`
+ * @returns {Object} 句柄 `{setState, destroy}`
  */
 export const mountMangaToggle = ({ onClick, title = "" }) => {
   // 用原生 button 而不是 role=button 的 div：键盘可达（Tab + Enter）由浏览器保证
@@ -170,14 +423,14 @@ export const mountMangaToggle = ({ onClick, title = "" }) => {
   (document.body || document.documentElement).appendChild(btn);
 
   return {
-    setActive(active) {
-      btn.textContent = active ? "漫" : "原";
-      btn.style.background = active
-        ? "rgba(24,24,27,0.86)"
-        : "rgba(140,140,140,0.75)";
+    /** 切换按钮呈现：`overlay` → 漫（嵌字）、`danmaku` → 幕（侧栏弹幕）、`off` → 原 */
+    setState(state) {
+      btn.textContent = TOGGLE_LABELS[state] || TOGGLE_LABELS[TOGGLE_STATE_OFF];
+      btn.dataset.state = state;
+      btn.style.background =
+        TOGGLE_BACKGROUNDS[state] || TOGGLE_BACKGROUNDS[TOGGLE_STATE_OFF];
     },
     destroy() {
-      btn.removeEventListener("click", onClick);
       btn.remove();
     },
   };

@@ -19,7 +19,13 @@ import {
   buildMangaVisionPrompt,
   parseVisionResult,
 } from "./prompt";
-import { attachOverlay, mountMangaToggle } from "./overlay";
+import {
+  MODE_MANGA_DANMAKU,
+  MODE_MANGA_OVERLAY,
+  TOGGLE_STATE_OFF,
+  attachMangaLayer,
+  mountMangaToggle,
+} from "./overlay";
 
 const MIN_IMAGE_EDGE = 300; // 小于该边长的图片视为图标/装饰图，跳过
 const MAX_SEND_WIDTH = 1500; // 发送前压缩到的最大宽度，控制 token 成本
@@ -52,7 +58,7 @@ export default class MangaManager {
   #mo = null;
   #resizeObserver = null;
   #toggle = null;
-  #states = new Map(); // img -> { url, overlay }
+  #states = new Map(); // img -> { url, layer }
   #pendingRoots = new Set(); // 待扫描的新增节点 / 换了 src 的图片
   #cache = {};
   #cacheReady = Promise.resolve();
@@ -63,6 +69,8 @@ export default class MangaManager {
   #activeCount = 0;
   #mutationsTimer = null;
   #visible = true;
+  // 显示方式：overlay（嵌字）/ danmaku（侧栏弹幕）
+  #mode = MODE_MANGA_OVERLAY;
   #started = false;
   #destroyed = false;
 
@@ -96,7 +104,7 @@ export default class MangaManager {
       onClick: () => this.toggle(),
       title: i18n("manga_enabled"),
     });
-    this.#toggle.setActive(this.#visible);
+    this.#toggle.setState(this.#toggleState());
 
     this.#io = new IntersectionObserver(this.#handleIntersect, {
       rootMargin: ROOT_MARGIN,
@@ -130,7 +138,7 @@ export default class MangaManager {
     this.#activeCount = 0;
     this.#pendingRoots.clear();
 
-    this.#states.forEach((state) => state.overlay?.destroy?.());
+    this.#states.forEach((state) => state.layer?.destroy?.());
     this.#states.clear();
 
     this.#toggle?.destroy();
@@ -143,11 +151,31 @@ export default class MangaManager {
     this.#flushCache();
   }
 
-  /** 切换覆盖层显隐：只改显示状态，不重新请求接口 */
+  /** 悬浮开关当前状态：三种显示方式之一，或关闭 */
+  #toggleState() {
+    if (!this.#visible) return TOGGLE_STATE_OFF;
+    return this.#mode;
+  }
+
+  /**
+   * 循环切换显示方式：嵌字 → 侧栏弹幕 → 原图 → 嵌字。
+   * 只改显示方式与显隐，不重新请求接口（译文与坐标都已在手）。
+   */
   toggle() {
-    this.#visible = !this.#visible;
-    this.#states.forEach((state) => state.overlay?.setVisible?.(this.#visible));
-    this.#toggle?.setActive(this.#visible);
+    if (!this.#visible) {
+      this.#visible = true;
+      this.#mode = MODE_MANGA_OVERLAY;
+    } else if (this.#mode === MODE_MANGA_OVERLAY) {
+      this.#mode = MODE_MANGA_DANMAKU;
+    } else {
+      this.#visible = false;
+    }
+
+    this.#states.forEach((state) => {
+      state.layer?.setMode?.(this.#mode);
+      state.layer?.setVisible?.(this.#visible);
+    });
+    this.#toggle?.setState(this.#toggleState());
   }
 
   #resolveVisionApiSetting() {
@@ -385,21 +413,22 @@ export default class MangaManager {
     const state = this.#states.get(img);
     if (!state || state.url !== url) return;
 
-    const overlay = attachOverlay(img, {
+    const layer = attachMangaLayer(img, {
       bubbles,
-      // 坐标来自发送给模型的那张图，必须用它换算百分比
+      // 坐标来自发送给模型的那张图；嵌字按百分比、弹幕按锚点换算，都用它
       naturalWidth: sentWidth,
       naturalHeight: sentHeight,
+      mode: this.#mode,
     });
-    if (!overlay) return;
+    if (!layer) return;
 
-    overlay.setVisible(this.#visible);
-    state.overlay = overlay;
+    layer.setVisible(this.#visible);
+    state.layer = layer;
     this.#resizeObserver?.observe(img);
   }
 
   #teardown(img) {
-    this.#states.get(img)?.overlay?.destroy?.();
+    this.#states.get(img)?.layer?.destroy?.();
     this.#resizeObserver?.unobserve(img);
     this.#states.delete(img);
   }
@@ -478,7 +507,7 @@ export default class MangaManager {
     if (typeof ResizeObserver === "undefined") return;
     this.#resizeObserver = new ResizeObserver((entries) => {
       entries.forEach((entry) => {
-        this.#states.get(entry.target)?.overlay?.sync?.();
+        this.#states.get(entry.target)?.layer?.sync?.();
       });
     });
   }
