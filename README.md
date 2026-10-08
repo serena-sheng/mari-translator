@@ -268,6 +268,18 @@ pnpm build:chrome        # 产物在 build/chrome/，chrome://extensions 开发�
 pnpm format              # prettier
 ```
 
+### 加载方式（本 fork 构建产物）
+
+```sh
+pnpm build:chrome                                   # 产物：build/chrome/
+cd build/chrome && npx bestzip ../kiss-translator-personal-fork-chrome.zip * .nojekyll
+```
+
+- **压缩包直接拖入**：先打开 `chrome://extensions` 右上角的「开发者模式」，把 `build/kiss-translator-personal-fork-chrome.zip` 拖进页面即自动安装（包根目录已放好 `manifest.json`）。
+- **加载已解压目录**：`chrome://extensions` → 「加载已解压的扩展程序」→ 选 `build/chrome/`。改代码后重新 `pnpm build:chrome`，在扩展卡片上点「重新加载」。
+- 若已装商店版 KISS Translator，**先禁用它**：两个扩展都会注入内容脚本，同一个页面会出现双份翻译。
+- 版本号沿用上游 `2.1.0`（Chrome 扩展版本号只允许点分数字，加 `-fork` 后缀会导致加载失败），加载后的卡片自带「已加载未打包扩展程序」标记，足够区分。
+
 ### 手测清单
 
 1. `chrome://extensions` 加载 `build/chrome/`，设置页「接口」里**启用一个视觉接口**（`QwenVL` 或 `DeepSeekVL`，本机若已有 DeepSeek key 选后者更省事）并填 API Key（可改 url/model）。**改动网页规则后需刷新目标页面**：设置页的规则变更不会热更新已打开页面的内容脚本（`TranslatorManager` 只监听设置键，规则键没有监听器）。
