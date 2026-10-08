@@ -160,6 +160,27 @@ test("keeps disabled as the initial thinking mode", () => {
   }
 });
 
+// 视觉接口用于漫画图片翻译：必须是 AI 接口（走 OpenAI 兼容协议）、有可用的默认端点与模型、
+// 不进聚合/流式管线（漫画走独立的单图请求），且默认关闭以免污染网页翻译的接口列表。
+test("ships vision APIs as opt-in OpenAI-compatible single-image endpoints", () => {
+  expect(API_SPE_TYPES.vision.size).toBeGreaterThanOrEqual(2);
+
+  for (const apiType of API_SPE_TYPES.vision) {
+    expect(API_SPE_TYPES.ai.has(apiType)).toBe(true);
+    expect(API_SPE_TYPES.batch.has(apiType)).toBe(false);
+    expect(API_SPE_TYPES.stream.has(apiType)).toBe(false);
+
+    const api = DEFAULT_API_LIST.find((item) => item.apiType === apiType);
+    expect(api).toBeDefined();
+    expect(api.url).toMatch(/^https:\/\//);
+    expect(api.model).toBeTruthy();
+    expect(api.useBatchFetch).toBe(false);
+    expect(api.useStream).toBe(false);
+    expect(api.httpTimeout).toBeGreaterThan(30);
+    expect(api.isDisabled).toBe(true);
+  }
+});
+
 describe("unified thinking capabilities", () => {
   test.each(["gpt-6-astra", " OPENAI/GPT-6-ASTRA "])(
     "recognizes Astra efforts and mandatory reasoning for %s",

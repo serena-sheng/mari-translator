@@ -5,6 +5,7 @@
 
 // --- 基础请求控制参数 ---
 export const DEFAULT_HTTP_TIMEOUT = 30; // 调用超时时间 (单位：秒)
+export const VISION_HTTP_TIMEOUT = 90; // 视觉模型单图请求的默认超时 (识别远慢于文本翻译，单位：秒)
 export const DEFAULT_FETCH_LIMIT = 10; // 默认最大并行请求/任务数量
 export const DEFAULT_FETCH_INTERVAL = 100; // 默认任务间隔时间 (单位：毫秒)
 export const DEFAULT_BATCH_INTERVAL = 400; // 批处理合并请求的等待延迟时间 (单位：毫秒)
@@ -61,6 +62,7 @@ export const OPT_TRANS_XIAOMIMIMO = "XiaomiMimo"; // 小米米莫 AI 翻译
 export const OPT_TRANS_ALIYUNBAILIAN = "AliyunBailian"; // 阿里云百炼大模型翻译
 export const OPT_TRANS_QWENMT = "QwenMT"; // 阿里云百炼 Qwen-MT 专用翻译
 export const OPT_TRANS_QWENVL = "QwenVL"; // 阿里云百炼 Qwen-VL 视觉模型 (OpenAI 兼容协议，供漫画图片翻译使用)
+export const OPT_TRANS_DEEPSEEKVL = "DeepSeekVL"; // DeepSeek 视觉模型 (deepseek-flash 支持图片输入，同样供漫画翻译使用)
 export const OPT_TRANS_CEREBRAS = "Cerebras"; // Cerebras AI 翻译极速推理服务
 export const OPT_TRANS_ZAI = "Zai"; // 智谱 AI 翻译服务
 export const OPT_TRANS_DEEPL = "DeepL"; // DeepL 官方专业翻译 API
@@ -100,6 +102,7 @@ export const OPT_ALL_TRANS_TYPES = [
   OPT_TRANS_ALIYUNBAILIAN,
   OPT_TRANS_QWENMT,
   OPT_TRANS_QWENVL,
+  OPT_TRANS_DEEPSEEKVL,
   OPT_TRANS_CEREBRAS,
   OPT_TRANS_ZAI,
   OPT_TRANS_TENCENT,
@@ -157,6 +160,7 @@ export const API_SPE_TYPES = {
     OPT_TRANS_XIAOMIMIMO,
     OPT_TRANS_ALIYUNBAILIAN,
     OPT_TRANS_QWENVL,
+    OPT_TRANS_DEEPSEEKVL,
     OPT_TRANS_CEREBRAS,
     OPT_TRANS_ZAI,
     OPT_TRANS_GEMINI,
@@ -264,6 +268,8 @@ export const API_SPE_TYPES = {
     OPT_TRANS_EPHONEAI,
     OPT_TRANS_APIMART,
   ]),
+  // 支持图片输入、可用于漫画翻译的视觉模型接口 (OpenAI 兼容 chat/completions + image_url)
+  vision: new Set([OPT_TRANS_QWENVL, OPT_TRANS_DEEPSEEKVL]),
   // 官方推荐/赞助商的翻译服务
   sponsors: new Set([OPT_TRANS_EPHONEAI, OPT_TRANS_APIMART]),
   // 暗黑模式下图标反色
@@ -1068,6 +1074,7 @@ export const OPT_LANGS_TO_SPEC = {
   [OPT_TRANS_ALIYUNBAILIAN]: OPT_LANGS_SPEC_NAME,
   [OPT_TRANS_QWENMT]: new Map([...OPT_LANGS_SPEC_NAME, ["auto", "auto"]]),
   [OPT_TRANS_QWENVL]: OPT_LANGS_SPEC_NAME,
+  [OPT_TRANS_DEEPSEEKVL]: OPT_LANGS_SPEC_NAME,
   [OPT_TRANS_CEREBRAS]: OPT_LANGS_SPEC_NAME,
   [OPT_TRANS_ZAI]: OPT_LANGS_SPEC_NAME,
   [OPT_TRANS_VOLCENGINE]: new Map([
@@ -1675,7 +1682,21 @@ const defaultApiOpts = {
     url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
     modelListUrl: "",
     model: "qwen-vl-max-latest",
+    httpTimeout: VISION_HTTP_TIMEOUT,
     ...defaultAiApiOpts,
+    useBatchFetch: false,
+    useStream: false,
+    streamRenderMode: "disabled",
+  },
+  // DeepSeek 官方 API 自 2026-08 起支持图片输入（deepseek-flash）；同样是 OpenAI 兼容协议
+  [OPT_TRANS_DEEPSEEKVL]: {
+    ...defaultApi,
+    url: "https://api.deepseek.com/chat/completions",
+    modelListUrl: "https://api.deepseek.com/models",
+    model: "deepseek-flash",
+    httpTimeout: VISION_HTTP_TIMEOUT,
+    ...defaultAiApiOpts,
+    thinkingMode: "disabled",
     useBatchFetch: false,
     useStream: false,
     streamRenderMode: "disabled",

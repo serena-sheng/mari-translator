@@ -16,6 +16,7 @@ import {
   OPT_TRANS_ALIYUNBAILIAN,
   OPT_TRANS_QWENMT,
   OPT_TRANS_QWENVL,
+  OPT_TRANS_DEEPSEEKVL,
   OPT_TRANS_CEREBRAS,
   OPT_TRANS_ZAI,
   OPT_TRANS_EPHONEAI,
@@ -58,6 +59,7 @@ import {
   INPUT_PLACE_SUMMARY,
   INPUT_PLACE_CONTEXT,
   GEMINI25_BUDGETS,
+  VISION_HTTP_TIMEOUT,
   THINKING_API_REGISTRY,
   isGPT6Astra,
   isGeminiInteractionsUrl,
@@ -1663,6 +1665,7 @@ const genReqFuncs = {
   [OPT_TRANS_ALIYUNBAILIAN]: genOpenAI,
   [OPT_TRANS_QWENMT]: genQwenMt,
   [OPT_TRANS_QWENVL]: genOpenAI,
+  [OPT_TRANS_DEEPSEEKVL]: genOpenAI,
   [OPT_TRANS_CEREBRAS]: genOpenAI,
   [OPT_TRANS_ZAI]: genOpenAI,
   [OPT_TRANS_DEEPLX]: genDeeplX,
@@ -2020,6 +2023,7 @@ export const parseTransRes = async (
     case OPT_TRANS_XIAOMIMIMO:
     case OPT_TRANS_ALIYUNBAILIAN:
     case OPT_TRANS_QWENVL:
+    case OPT_TRANS_DEEPSEEKVL:
     case OPT_TRANS_CEREBRAS:
     case OPT_TRANS_ZAI:
     case OPT_TRANS_GEMINI_2:
@@ -2130,6 +2134,7 @@ function parseDictRes(res, apiType) {
     case OPT_TRANS_XIAOMIMIMO:
     case OPT_TRANS_ALIYUNBAILIAN:
     case OPT_TRANS_QWENVL:
+    case OPT_TRANS_DEEPSEEKVL:
     case OPT_TRANS_CEREBRAS:
     case OPT_TRANS_ZAI:
     case OPT_TRANS_GEMINI_2:
@@ -2752,6 +2757,7 @@ export const handleSubtitle = async ({
     case OPT_TRANS_XIAOMIMIMO:
     case OPT_TRANS_ALIYUNBAILIAN:
     case OPT_TRANS_QWENVL:
+    case OPT_TRANS_DEEPSEEKVL:
     case OPT_TRANS_CEREBRAS:
     case OPT_TRANS_ZAI:
     case OPT_TRANS_GEMINI_2:
@@ -2972,6 +2978,7 @@ export const handleSummarize = async ({
     case OPT_TRANS_XIAOMIMIMO:
     case OPT_TRANS_ALIYUNBAILIAN:
     case OPT_TRANS_QWENVL:
+    case OPT_TRANS_DEEPSEEKVL:
     case OPT_TRANS_CEREBRAS:
     case OPT_TRANS_ZAI:
     case OPT_TRANS_GEMINI_2:
@@ -2997,9 +3004,6 @@ export const handleSummarize = async ({
   }
 };
 
-// 视觉模型单图请求的兜底超时（秒）；调用方配置了 httpTimeout 时优先用配置值
-const VISION_API_HTTP_TIMEOUT = 90;
-
 /**
  * 视觉模型单图翻译请求（漫画图片翻译专用）。
  *
@@ -3021,7 +3025,7 @@ export const callVisionApi = async ({
   prompt,
   signal,
 }) => {
-  const { url, key, model, httpTimeout } = apiSetting;
+  const { url, key, model, httpTimeout, customBody } = apiSetting;
   if (!url?.trim()) {
     throw new Error("Vision API url is empty");
   }
@@ -3045,6 +3049,12 @@ export const callVisionApi = async ({
     max_tokens: 4096,
   };
 
+  // 与文本翻译一致：允许在接口配置里用「自定义请求体」覆盖/追加参数
+  // （例如 DeepSeek 视觉请求可传 {"thinking":{"type":"disabled"}} 关掉思考模式）
+  if (customBody?.trim()) {
+    Object.assign(body, parseJsonObj(customBody));
+  }
+
   // 单图识别耗时远高于文本翻译（30s 默认值经常不够），此处给视觉请求更宽松的超时
   const res = await fetchData(
     url,
@@ -3057,7 +3067,7 @@ export const callVisionApi = async ({
       body: JSON.stringify(body),
       signal,
     },
-    { httpTimeout: httpTimeout || VISION_API_HTTP_TIMEOUT }
+    { httpTimeout: httpTimeout || VISION_HTTP_TIMEOUT }
   );
 
   if (typeof res === "string") return res;

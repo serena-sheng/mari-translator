@@ -7,7 +7,7 @@
  * 生命周期与 FAB / 输入框翻译等子模块一致：随 TranslatorManager 创建，随 restart 销毁重建。
  */
 
-import { OPT_TRANS_QWENVL, newI18n } from "../config";
+import { API_SPE_TYPES, newI18n } from "../config";
 import { getMangaCache, setMangaCache } from "../libs/storage";
 import { fetchData } from "../libs/fetch";
 import { kissLog } from "../libs/log";
@@ -56,9 +56,7 @@ export default class MangaManager {
 
     const apiSetting = this.#resolveVisionApiSetting();
     if (!apiSetting) {
-      kissLog(
-        "manga: no enabled vision api (QwenVL) with api key configured, skip"
-      );
+      kissLog("manga: no enabled vision api with api key configured, skip");
       return;
     }
 
@@ -129,10 +127,13 @@ export default class MangaManager {
     const apis = Array.isArray(this.#setting?.transApis)
       ? this.#setting.transApis
       : [];
-    // 视觉接口必须有 Key 才能真正调用；只启用不填 Key 不算可用配置
+    // 视觉接口必须有 Key 才能真正调用；只启用不填 Key 不算可用配置。
+    // 不绑定具体服务商：QwenVL / DeepSeekVL 等任何 vision 能力接口都可用，谁启用就用谁。
     return apis.find(
       (api) =>
-        api?.apiType === OPT_TRANS_QWENVL && !api.isDisabled && api.key?.trim()
+        API_SPE_TYPES.vision.has(api?.apiType) &&
+        !api.isDisabled &&
+        api.key?.trim()
     );
   }
 

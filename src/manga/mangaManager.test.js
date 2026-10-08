@@ -153,17 +153,20 @@ describe("MangaManager", () => {
   test.each([
     ["接口被禁用", { apiType: "QwenVL", isDisabled: true, key: "k" }],
     ["缺少 API Key", { apiType: "QwenVL", key: "   " }],
-  ])("未配置可用的 QwenVL 接口时不启动（%s），页面无任何注入", (_label, api) => {
-    const manager = new MangaManager({
-      rule: rule(),
-      setting: { uiLang: "zh", transApis: [api] },
-    });
-    manager.start();
+  ])(
+    "未配置可用的 QwenVL 接口时不启动（%s），页面无任何注入",
+    (_label, api) => {
+      const manager = new MangaManager({
+        rule: rule(),
+        setting: { uiLang: "zh", transApis: [api] },
+      });
+      manager.start();
 
-    expect(document.querySelector(".kiss-manga-toggle")).toBeNull();
-    expect(MockIntersectionObserver.instances).toHaveLength(0);
-    manager.stop();
-  });
+      expect(document.querySelector(".kiss-manga-toggle")).toBeNull();
+      expect(MockIntersectionObserver.instances).toHaveLength(0);
+      manager.stop();
+    }
+  );
 
   test("图片进入视口后调用视觉接口并把气泡覆盖到图片上", async () => {
     const manager = createManager();
@@ -278,10 +281,14 @@ describe("MangaManager", () => {
     const SECOND_URL = "https://cdn.example.com/pages/02.jpg";
     callVisionApi
       .mockResolvedValueOnce(
-        JSON.stringify([{ box: [0, 0, 100, 100], src: "", dst: "第一页", vertical: false }])
+        JSON.stringify([
+          { box: [0, 0, 100, 100], src: "", dst: "第一页", vertical: false },
+        ])
       )
       .mockResolvedValueOnce(
-        JSON.stringify([{ box: [0, 0, 100, 100], src: "", dst: "第二页", vertical: false }])
+        JSON.stringify([
+          { box: [0, 0, 100, 100], src: "", dst: "第二页", vertical: false },
+        ])
       );
 
     const manager = createManager();
@@ -312,6 +319,47 @@ describe("MangaManager", () => {
     );
     expect(document.querySelectorAll(".kiss-manga-overlay")).toHaveLength(1);
     expect(overlayOf().textContent).toBe("第二页");
+
+    manager.stop();
+  });
+
+  test("视觉接口不绑定服务商：DeepSeekVL 槽同样可用于漫画翻译", async () => {
+    const manager = new MangaManager({
+      rule: rule(),
+      setting: {
+        uiLang: "zh",
+        transApis: [
+          {
+            apiSlug: "ds",
+            apiType: "DeepSeekVL",
+            url: "https://api.deepseek.com/chat/completions",
+            key: "k",
+            model: "deepseek-flash",
+          },
+          // 纯文本翻译接口不应被当成视觉接口使用
+          {
+            apiSlug: "ds-text",
+            apiType: "DeepSeek",
+            url: "https://api.deepseek.com/chat/completions",
+            key: "k",
+            model: "deepseek-v4-flash",
+          },
+        ],
+      },
+    });
+    const img = createImage();
+    manager.start();
+    await flush();
+
+    MockIntersectionObserver.instances[0].trigger(img);
+    await flush();
+
+    expect(callVisionApi).toHaveBeenCalledTimes(1);
+    expect(callVisionApi.mock.calls[0][0].apiSetting).toMatchObject({
+      apiType: "DeepSeekVL",
+      model: "deepseek-flash",
+    });
+    expect(overlayOf()).not.toBeNull();
 
     manager.stop();
   });

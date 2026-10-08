@@ -6,7 +6,7 @@
 >
 > 1. **站点级 AI 提示词覆盖**：网页规则新增 `aiPrompt` 字段，追加到该站点 AI 翻译的系统提示词末尾（留空不生效）。
 >    内置三套站点规则与术语表：GitHub（编程/AI）、路透/彭博/BBC/经济学人等（政治金融）、成人站点（日英术语 + 露骨内容直译指令）。
-> 2. **漫画图片翻译**：新增 `QwenVL` 视觉接口类型（OpenAI 兼容协议，DashScope 兼容模式 / 豆包 Ark / Kimi 均可）。
+> 2. **漫画图片翻译**：新增视觉接口类型 `QwenVL` / `DeepSeekVL`（OpenAI 兼容协议，DashScope、DeepSeek 官方 API、豆包 Ark、Kimi 等均可）。
 >    在规则中把「漫画翻译」设为开启后，页面右下角出现「漫」悬浮按钮：自动发现视口内的漫画大图，调用视觉模型取回气泡坐标与译文并覆盖渲染（支持竖排），点击按钮可切换原文/译文。
 >
 > 使用与手测见 [个人 fork 改动](#个人-fork-改动personal-fork)。
@@ -247,14 +247,17 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
   - 路透/美联/彭博/FT/经济学人/WSJ/NYT/CNBC/BBC/卫报/半岛/外交事务/Politico：财经政治术语表（加息、收益率曲线倒挂、鹰派/鸽派等）+ 新闻财经翻译指令；
   - 成人站点（pornhub/xvideos/xnxx/xhamster/missav/e-hentai/exhentai/nhentai/hanime/jable）：日英成人术语表 + 忠实直译（含潜台词与语气）指令，并已把「漫画翻译」默认设为开启。
 
-### 2. 漫画图片翻译（`QwenVL`）
+### 2. 漫画图片翻译（`QwenVL` / `DeepSeekVL`）
 
-- 新增接口类型 `QwenVL`：默认 `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` + `qwen-vl-max-latest`。
-  只要服务商是 OpenAI 兼容协议（DashScope 兼容模式、豆包 Ark、Kimi 等），改 `url` / `model` / `key` 即可切换；该接口默认关闭聚合与流式，漫画翻译走独立的单图请求链路（每次一张图、90s 兜底超时）。
+- 新增两个视觉接口槽，都走 OpenAI 兼容的 `chat/completions` + `image_url` 协议，**谁启用就用谁**（同时启用时取接口列表里靠前的那个）：
+  - `QwenVL`：`https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` + `qwen-vl-max-latest`；
+  - `DeepSeekVL`：`https://api.deepseek.com/chat/completions` + `deepseek-flash`（DeepSeek 官方 API 自 2026-08 起支持图片输入，旧名 `deepseek-v4-flash-vision-exp` 已由最新 Flash 承接）。
+  也支持任何其它 OpenAI 兼容的视觉服务（豆包 Ark、Kimi、SiliconFlow 托管的开源 VL 等）：改 `url` / `model` / `key` 即可。该槽默认关闭聚合与流式，漫画翻译走独立的单图请求链路（每次一张图；接口默认超时 90s，可在接口配置里改）。
 - 开启方式：在目标站点的网页规则里把「漫画翻译」设为**开启**。此时页面右下角出现「漫」悬浮按钮，点击可在译文/原文之间切换。
-- 工作方式：`IntersectionObserver` + `MutationObserver` 只处理进入视口的 `≥300px` 图片（懒加载、翻页换 `src`、SPA 都覆盖）；图片经 background 代理下载转 dataURL（跨域/防盗链不受 CORS 限制），宽度超过 1500px 先压缩再发送；视觉模型返回严格 JSON（`box`/`src`/`dst`/`vertical`），带 markdown 围栏等脏输出会被容错解析；结果按图片 URL 缓存（最多 200 条，超出按更新时间淘汰），覆盖层用百分比定位，图片缩放时自动跟随，`vertical: true` 的气泡竖排渲染。
+- 工作方式：`IntersectionObserver` + `MutationObserver` 只处理进入视口的 `≥300px` 图片（懒加载、翻页原地换 `src`、SPA 都覆盖）；图片经 background 代理下载转 dataURL（跨域/防盗链不受 CORS 限制），宽度超过 1500px 先压缩再发送；视觉模型返回严格 JSON（`box`/`src`/`dst`/`vertical`），带 markdown 围栏等脏输出会被容错解析；结果按图片 URL 缓存（最多 200 条，超出按更新时间淘汰），覆盖层用百分比定位，图片缩放时自动跟随，`vertical: true` 的气泡竖排渲染。
+- 与 DeepSeek 视觉接口相关的官方限制（已按此实现，无需额外配置）：图片必须放在 `user` 消息里（`system`/`assistant` 带图返回 400）；支持 JPEG/PNG/GIF/WebP；内联单图 ≤32MiB、请求体 ≤48MiB；模型侧会把图片等比缩放到约 1300×1300 以内、每张 ≤1024 tokens，因此返回的气泡坐标换算成百分比后与页面显示尺寸无关。DeepSeek 的思考模式默认开启，若想更快/更省，可在该接口的「自定义请求体」里填 `{"thinking":{"type":"disabled"}}`（视觉请求会合并这个字段）。
 - 注入元素都带 `notranslate`，不会被自身的网页翻译器二次翻译；`stop()`（页面卸载/重载/规则变更）会移除覆盖层与开关并还原父容器定位样式。
-- 油猴版：`@connect dashscope.aliyuncs.com` 已存在；若改用豆包/Kimi，请把对应域名加进 `config-overrides.js` 的 `@connect` 列表。
+- 油猴版：`@connect dashscope.aliyuncs.com` 已存在，用 DeepSeek 视觉需在 `config-overrides.js` 的 `@connect` 列表加上 `api.deepseek.com`（改其它服务商同理）。
 
 ### 开发命令（本 fork 实测）
 
@@ -267,7 +270,7 @@ pnpm format              # prettier
 
 ### 手测清单
 
-1. `chrome://extensions` 加载 `build/chrome/`，设置页「接口」里启用 `QwenVL` 并填 API Key（可改 url/model）。**改动网页规则后需刷新目标页面**：设置页的规则变更不会热更新已打开页面的内容脚本（`TranslatorManager` 只监听设置键，规则键没有监听器）。
+1. `chrome://extensions` 加载 `build/chrome/`，设置页「接口」里**启用一个视觉接口**（`QwenVL` 或 `DeepSeekVL`，本机若已有 DeepSeek key 选后者更省事）并填 API Key（可改 url/model）。**改动网页规则后需刷新目标页面**：设置页的规则变更不会热更新已打开页面的内容脚本（`TranslatorManager` 只监听设置键，规则键没有监听器）。
 2. GitHub 仓库 README：开启双语翻译，检查 `agent→智能体`、`transformer` 保留原文；术语高亮样式正常。
 3. reuters.com 文章：`rate hike→加息`、`hawkish→鹰派`。
 4. 任一成人站点：术语与语气（央求/羞耻等）是否落地，标题/标签用中文社区惯用说法。

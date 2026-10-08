@@ -30,6 +30,18 @@ describe("parseResponse", () => {
     );
   });
 
+  test("returns a data URL for binary content when base64 is expected", async () => {
+    const response = new Response(new Blob([new Uint8Array([1, 2, 3])]), {
+      status: 200,
+      headers: { "Content-Type": "application/octet-stream" },
+    });
+
+    // 二进制跨 background 消息通道只能以字符串回传，因此必须转成 data URL
+    await expect(parseResponse(response, "base64")).resolves.toMatch(
+      /^data:application\/octet-stream;base64,/
+    );
+  });
+
   test("throws a clear error when non-stream path receives SSE", async () => {
     const response = new Response("data: hello\n\n", {
       status: 200,
