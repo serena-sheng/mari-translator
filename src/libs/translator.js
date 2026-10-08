@@ -4267,6 +4267,20 @@ overflow-wrap: anywhere !important;`;
       this.#setting.subtitleSetting
     );
 
+    // 站点级 AI 提示词覆盖：追加到系统提示词末尾（聚合/非聚合两条链路各自生效，不覆盖原始提示词）。
+    // 基础提示词为空时（如「简洁单句」预设不设系统提示词）直接采用站点指令，避免静默失效。
+    const aiPromptExtra = this.#rule.aiPrompt?.trim();
+    if (aiPromptExtra) {
+      const withSitePrompt = (base) =>
+        base.trim() ? `${base}\n\n${aiPromptExtra}` : aiPromptExtra;
+      if (typeof apiSetting.systemPrompt === "string") {
+        apiSetting.systemPrompt = withSitePrompt(apiSetting.systemPrompt);
+      }
+      if (typeof apiSetting.nobatchPrompt === "string") {
+        apiSetting.nobatchPrompt = withSitePrompt(apiSetting.nobatchPrompt);
+      }
+    }
+
     const glossary = { ...this.#glossary };
     const apisMap = this.#apisMap;
 

@@ -168,6 +168,8 @@ function RuleFields({ rule, rules, setShow, setKeyword }) {
     ignoreSelector = "", // 忽略不翻译的 CSS 选择器
     terms, // 专有名词对照表（普通）
     aiTerms, // AI 专有名词对照表
+    aiPrompt = "", // 该站点 AI 翻译的 system prompt 追加指令
+    mangaEnabled = "false", // 是否启用漫画图片翻译模式
     termsStyle = "", // 专有名词样式
     highlightStyle = "color: red;", // 高亮单词样式
     textExtStyle = "", // 译文额外 CSS 样式
@@ -808,6 +810,33 @@ function RuleFields({ rule, rules, setShow, setKeyword }) {
               multiline
               maxRows={10}
             />
+            {/* 站点级 AI 提示词追加覆盖 */}
+            <TextField
+              size="small"
+              label={i18n("ai_prompt")}
+              helperText={i18n("ai_prompt_helper")}
+              name="aiPrompt"
+              value={aiPrompt}
+              disabled={disabled}
+              onChange={handleChange}
+              multiline
+              maxRows={10}
+            />
+            {/* 漫画图片翻译模式开关 */}
+            <TextField
+              select
+              size="small"
+              name="mangaEnabled"
+              value={mangaEnabled}
+              label={i18n("manga_enabled")}
+              helperText={i18n("manga_enabled_helper")}
+              disabled={disabled}
+              onChange={handleChange}
+            >
+              {GlobalItem}
+              <MenuItem value={"false"}>{i18n("disable")}</MenuItem>
+              <MenuItem value={"true"}>{i18n("enable")}</MenuItem>
+            </TextField>
 
             {/* 术语高亮 CSS 样式定义 */}
             <CodeField

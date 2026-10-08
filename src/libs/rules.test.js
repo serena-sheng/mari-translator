@@ -1,9 +1,19 @@
-import { checkRules, matchRule, saveRule } from "./rules";
+import {
+  checkRules,
+  matchRule,
+  matchesRulePattern,
+  mergeRules,
+  saveRule,
+} from "./rules";
 import { getDisabledSubRules, getRulesWithDefault, saveEdit } from "./storage";
 import { loadOrFetchSubRules } from "./subRules";
-import { GLOBLA_RULE } from "../config/rules";
-import { OPT_TRANS_MICROSOFT, OPT_TRANS_TENCENT } from "../config/api";
-import { DEFAULT_API_SETTING } from "../config";
+import { BUILTIN_RULES, GLOBLA_RULE } from "../config/rules";
+import {
+  OPT_TRANS_DEEPSEEK,
+  OPT_TRANS_MICROSOFT,
+  OPT_TRANS_TENCENT,
+} from "../config/api";
+import { DEFAULT_API_LIST, DEFAULT_API_SETTING, GLOBAL_KEY } from "../config";
 
 jest.mock("./storage", () => ({
   getRulesWithDefault: jest.fn(),
@@ -387,7 +397,7 @@ describe("rules terms integration（规则链路：原始规则 → 合并 → T
     isDisabled,
   });
 
-  const createTranslatorWithRule = (rule, text) => {
+  const createTranslatorWithRule = (rule, text, apis) => {
     document.body.innerHTML =
       '<main id="root"><span id="target"></span></main>';
     document.getElementById("target").textContent = text;
@@ -411,7 +421,7 @@ describe("rules terms integration（规则链路：原始规则 → 合并 → T
         customStyles: [],
         // 合并后的规则保留 GLOBLA_RULE 的 apiSlug（Microsoft），
         // 因此 transApis 需配置与该 apiSlug 一致的 API 设置才会真正发起翻译
-        transApis: [
+        transApis: apis || [
           {
             ...createApiSetting(rule.apiSlug || OPT_TRANS_MICROSOFT),
             placeholder: "[[ ]]",
@@ -556,5 +566,125 @@ describe("rules terms integration（规则链路：原始规则 → 合并 → T
     expect(requestedText).toBe("[[1]] only");
     const inner = document.querySelector(`.${Translator.KISS_CLASS.inner}`);
     expect(inner.textContent).toBe("接口 only");
+  });
+
+  test("站点级 aiPrompt 追加到 AI 接口系统提示词末尾：聚合与非聚合两条链路都生效", async () => {
+    getRulesWithDefault.mockResolvedValue([
+      {
+        pattern: "example.com",
+        selector: "article",
+        transOpen: "true",
+        aiPrompt: "术语表里的译法优先，不得自行发挥。",
+      },
+      { pattern: GLOBLA_RULE.pattern, selector: "p" },
+    ]);
+
+    const rule = await matchRule("https://example.com/post", {
+      injectRules: false,
+      subrulesList: [],
+    });
+    expect(rule.aiPrompt).toBe("术语表里的译法优先，不得自行发挥。");
+
+    // 只有 AI 接口才有 systemPrompt/nobatchPrompt，所以这里换成 DeepSeek
+    createTranslatorWithRule({ ...rule, apiSlug: "ds" }, "hello", [
+      {
+        ...DEFAULT_API_LIST.find((api) => api.apiType === OPT_TRANS_DEEPSEEK),
+        apiSlug: "ds",
+        isDisabled: false,
+        placeholder: "[[ ]]",
+      },
+    ]);
+    await flushAsync();
+
+    const { apiSetting } = apiTranslate.mock.calls[0][0];
+    const extra = "术语表里的译法优先，不得自行发挥。";
+
+    // 聚合链路：内置批量 JSON 预设保留为前缀，站点指令只做末尾追加
+    const [baseSystemPrompt, ...systemRest] = apiSetting.systemPrompt.split(
+      `\n\n${extra}`
+    );
+    expect(baseSystemPrompt.trim().length).toBeGreaterThan(0);
+    expect(systemRest).toEqual([""]);
+
+    // 非聚合链路：默认「简洁单句」预设不设系统提示词（基础值为空串），
+    // 此时站点指令直接成为系统提示词，避免站点级 prompt 静默失效
+    expect(apiSetting.nobatchPrompt).toBe(extra);
+  });
+});
+
+describe("aiPrompt / mangaEnabled 字段链路", () => {
+  test("checkRules 保留 aiPrompt 与 mangaEnabled，供导入/同步往返不丢字段", () => {
+    const [rule] = checkRules([
+      {
+        pattern: "example.com",
+        aiPrompt: "保持术语一致",
+        mangaEnabled: "true",
+      },
+    ]);
+
+    expect(rule.aiPrompt).toBe("保持术语一致");
+    expect(rule.mangaEnabled).toBe("true");
+  });
+
+  test("checkRules 对缺失或非法的新字段回退到默认值", () => {
+    const [rule] = checkRules([
+      { pattern: "example.com", mangaEnabled: "yes" },
+    ]);
+
+    expect(rule.aiPrompt).toBe("");
+    // 非法值回退到全局继承标记，由 mergeRules 继承基线规则
+    expect(rule.mangaEnabled).toBe(GLOBAL_KEY);
+  });
+
+  test("mergeRules：非空 aiPrompt 覆盖、空值继承，mangaEnabled 走枚举继承", () => {
+    const base = { ...GLOBLA_RULE, aiPrompt: "", mangaEnabled: "false" };
+
+    expect(mergeRules(base, { aiPrompt: "站点指令" })).toMatchObject({
+      aiPrompt: "站点指令",
+    });
+    expect(mergeRules(base, { aiPrompt: "   " })).toMatchObject({
+      aiPrompt: "",
+    });
+    expect(mergeRules(base, { mangaEnabled: "true" })).toMatchObject({
+      mangaEnabled: "true",
+    });
+    expect(mergeRules(base, { mangaEnabled: GLOBAL_KEY })).toMatchObject({
+      mangaEnabled: "false",
+    });
+  });
+
+  test("预置站点规则命中各自的目标站点，且漫画开关只挂在成人站点规则上", () => {
+    const githubRule = BUILTIN_RULES.find(
+      (rule) => rule.pattern === "github.com"
+    );
+    expect(githubRule.aiTerms).toContain("LLM,大语言模型");
+    expect(
+      matchesRulePattern("https://github.com/x/y", githubRule.pattern)
+    ).toBe(true);
+
+    const newsRule = BUILTIN_RULES.find((rule) =>
+      rule.pattern.includes("reuters.com")
+    );
+    expect(newsRule).toBeDefined();
+    [
+      "https://www.reuters.com/markets/rates/x",
+      "https://www.bbc.co.uk/news/world-x",
+      "https://www.ft.com/content/abc",
+    ].forEach((href) => {
+      expect(matchesRulePattern(href, newsRule.pattern)).toBe(true);
+    });
+    expect(matchesRulePattern("https://example.com/", newsRule.pattern)).toBe(
+      false
+    );
+
+    const mangaRules = BUILTIN_RULES.filter(
+      (rule) => rule.mangaEnabled === "true"
+    );
+    expect(mangaRules).toHaveLength(1);
+    ["https://e-hentai.org/g/1/abc", "https://missav.ws/en/abc"].forEach(
+      (href) => {
+        expect(matchesRulePattern(href, mangaRules[0].pattern)).toBe(true);
+      }
+    );
   });
 });
