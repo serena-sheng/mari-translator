@@ -15,6 +15,16 @@
 
 两者断言同一批行为，都会在失败时以非 0 退出码结束。
 
+## 顺便：给任意开着调试口的浏览器装扩展（不需要点原生目录框）
+
+```sh
+node tools/load-extension.mjs --launch            # 自己起一个带调试口的隔离实例再装
+node tools/load-extension.mjs --port 9222         # 装进已在 9222 开调试的浏览器
+```
+
+前提是目标浏览器以 `--enable-unsafe-extension-debugging` 启动（缺这个 flag 时 Extensions 域会返回
+`Method not available`，脚本会把这个原因打出来）。装好的扩展会写进 profile，之后照常保留。
+
 ## 前置
 
 ```sh

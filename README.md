@@ -341,6 +341,9 @@ cd build/chrome && npx bestzip ../kiss-translator-personal-fork-chrome.zip * .no
 
 - **压缩包直接拖入**：先打开 `chrome://extensions` 右上角的「开发者模式」，把 `build/kiss-translator-personal-fork-chrome.zip` 拖进页面即自动安装（包根目录已放好 `manifest.json`）。
 - **加载已解压目录**：`chrome://extensions` → 「加载已解压的扩展程序」→ 选 `build/chrome/`。改代码后重新 `pnpm build:chrome`，在扩展卡片上点「重新加载」。
+- **不用点原生目录框的装法**：让浏览器以 `--enable-unsafe-extension-debugging` 启动，然后
+  `node tools/load-extension.mjs --port <调试端口>` —— 它走 CDP 的 `Extensions.loadUnpacked`，
+  等价于「加载已解压的扩展程序」；`--launch` 会自动起一个带调试口的隔离实例再装。
 - 若已装商店版 KISS Translator，**先禁用它**：两个扩展都会注入内容脚本，同一个页面会出现双份翻译。
 - 版本号沿用上游 `2.1.0`（Chrome 扩展版本号只允许点分数字，加 `-fork` 后缀会导致加载失败），加载后的卡片自带「已加载未打包扩展程序」标记，足够区分。
 
