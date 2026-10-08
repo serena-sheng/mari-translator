@@ -282,7 +282,7 @@ cd build/chrome && npx bestzip ../kiss-translator-personal-fork-chrome.zip * .no
 
 ### 手测清单
 
-1. `chrome://extensions` 加载 `build/chrome/`，设置页「接口」里**启用一个视觉接口**（`QwenVL` 或 `DeepSeekVL`，本机若已有 DeepSeek key 选后者更省事）并填 API Key（可改 url/model）。**改动网页规则后需刷新目标页面**：设置页的规则变更不会热更新已打开页面的内容脚本（`TranslatorManager` 只监听设置键，规则键没有监听器）。
+1. `chrome://extensions` 加载 `build/chrome/`，设置页「接口」里**启用一个视觉接口**（`QwenVL` 或 `DeepSeekVL`，本机若已有 DeepSeek key 选后者更省事）并填 API Key（可改 url/model）。**若接口列表里看不到新内置接口**（旧设置不会自动并入新增加的预设接口，视觉槽是后加的），点「添加接口」→ 选 `QwenVL` / `DeepSeekVL` 创建一个实例即可（url/model 已预填）。**改动网页规则后需刷新目标页面**：设置页的规则变更不会热更新已打开页面的内容脚本（`TranslatorManager` 只监听设置键，规则键没有监听器）。
 2. GitHub 仓库 README：开启双语翻译，检查 `agent→智能体`、`transformer` 保留原文；术语高亮样式正常。
 3. reuters.com 文章：`rate hike→加息`、`hawkish→鹰派`。
 4. 任一成人站点：术语与语气（央求/羞耻等）是否落地，标题/标签用中文社区惯用说法。
