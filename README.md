@@ -2,14 +2,14 @@
 
 [English](README.en.md) | [中文](README.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
-> **个人 fork（分支 `personal-fork`）**：基于上游 v2.1.0，新增两项定制能力，其余行为与上游一致。
+> **个人 fork（分支 `personal-fork`）**：基于上游 `dev` 分支（`a8c5a6f`，版本号 2.1.0），新增两项定制能力，其余行为与上游一致。
 >
 > 1. **站点级 AI 提示词覆盖**：网页规则新增 `aiPrompt` 字段，追加到该站点 AI 翻译的系统提示词末尾（留空不生效）。
 >    内置三套站点规则与术语表：GitHub（编程/AI）、路透/彭博/BBC/经济学人等（政治金融）、成人站点（日英术语 + 露骨内容直译指令）。
 > 2. **漫画图片翻译**：新增视觉接口类型 `QwenVL` / `DeepSeekVL`（OpenAI 兼容协议，DashScope、DeepSeek 官方 API、豆包 Ark、Kimi 等均可）。
->    在规则中把「漫画翻译」设为开启后，页面右下角出现「漫」悬浮按钮：自动发现视口内的漫画大图，调用视觉模型取回气泡坐标与译文并覆盖渲染（支持竖排），点击按钮可切换原文/译文。
+>    在规则中把「漫画翻译」设为开启后，页面右下角出现「漫」悬浮按钮：自动发现视口内的漫画大图，调用视觉模型取回气泡坐标与译文并覆盖渲染（支持竖排），点击按钮可切换原文/译文；视觉输入会带上该站点的术语表与补充提示词，思考模式也可按接口配置。
 >
-> 使用与手测见 [个人 fork 改动](#个人-fork-改动personal-fork)。
+> 使用、改动清单与手测见 [个人 fork 改动](#个人-fork-改动personal-fork)。
 
 一个简约、开源的 [双语对照翻译扩展 & 油猴脚本](https://github.com/fishjar/kiss-translator)。
 
@@ -235,7 +235,7 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
 
 ## 个人 fork 改动（personal-fork）
 
-> 本节内容只在本 fork 中维护。除下列改动外，翻译链路、界面与上游 v2.1.0 完全一致。
+> 本节内容只在本 fork 中维护。除下列改动外，翻译链路、界面与上游 `dev`（`a8c5a6f`，版本 2.1.0）完全一致。
 
 ### 1. 站点级 AI 提示词覆盖（`aiPrompt`）
 
@@ -249,17 +249,51 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
 
 ### 2. 漫画图片翻译（`QwenVL` / `DeepSeekVL`）
 
-- 新增两个视觉接口槽，都走 OpenAI 兼容的 `chat/completions` + `image_url` 协议，**谁启用就用谁**（同时启用时取接口列表里靠前的那个）：
+- 新增两个视觉接口槽，都走 OpenAI 兼容的 `chat/completions` + `image_url` 协议，**谁启用就用谁**（按设置页里的接口排序取第一个启用的视觉接口；同时启用两个时，把想用的那个拖到前面或停用另一个）：
   - `QwenVL`：`https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` + `qwen-vl-max-latest`；
   - `DeepSeekVL`：`https://api.deepseek.com/chat/completions` + `deepseek-flash`（DeepSeek 官方 API 自 2026-08 起支持图片输入，旧名 `deepseek-v4-flash-vision-exp` 已由最新 Flash 承接）。
   也支持任何其它 OpenAI 兼容的视觉服务（豆包 Ark、Kimi、SiliconFlow 托管的开源 VL 等）：改 `url` / `model` / `key` 即可。该槽默认关闭聚合与流式，漫画翻译走独立的单图请求链路（每次一张图；接口默认超时 90s，可在接口配置里改）。
 - 开启方式：在目标站点的网页规则里把「漫画翻译」设为**开启**。此时页面右下角出现「漫」悬浮按钮，点击可在译文/原文之间切换。
-- 工作方式：`IntersectionObserver` + `MutationObserver` 只处理进入视口的 `≥300px` 图片（懒加载、翻页原地换 `src`、SPA 都覆盖）；图片经 background 代理下载转 dataURL（跨域/防盗链不受 CORS 限制），宽度超过 1500px 先压缩再发送；视觉模型返回严格 JSON（`box`/`src`/`dst`/`vertical`），带 markdown 围栏等脏输出会被容错解析；结果按图片 URL 缓存（最多 200 条，超出按更新时间淘汰），覆盖层用百分比定位，图片缩放时自动跟随，`vertical: true` 的气泡竖排渲染。
+- 工作方式：`IntersectionObserver` + `MutationObserver` 只处理进入视口的 `≥300px` 图片（懒加载、翻页原地换 `src`、SPA 都覆盖）；图片经 background 代理下载转 dataURL（跨域图片不受 CORS 限制；若站点有防盗链导致下载被拒，则退回同源 canvas 兜底，跨域图片在兜底路径上会失败并跳过该图），宽度超过 1500px 先压缩再发送；视觉模型返回严格 JSON（`box`/`src`/`dst`/`vertical`），带 markdown 围栏等脏输出会被容错解析；结果按图片 URL 缓存（最多 200 条，超出按更新时间淘汰），覆盖层用百分比定位 + `ResizeObserver` 重算字号，图片缩放时自动跟随，`vertical: true` 的气泡竖排渲染。
 - **站点规则同时作用于视觉链路**：漫画翻译的视觉提示词 = 固定基础指令 + 该站点规则的术语表（`aiTerms`，渲染成 `原文 → 译文`，无译文写「保留原文」）+ 该站点的补充提示词（`aiPrompt`，作为「本站点补充要求」），末尾重申「仍然只输出 JSON 数组」。也就是说预置的成人站点术语表/直译指令、GitHub 的编程术语表，对漫画译文同样生效。改了术语表或提示词后，旧图片缓存会自动失效（缓存条目带着提示词签名，签名不一致就重新识别）。
 - **思考模式对视觉请求同样生效**：视觉接口在设置页里选的思考模式/强度会按厂商协议注入（DeepSeek 的视觉槽默认 `disabled`，会真的带上 `thinking:{"type":"disabled"}`，避免白花 token；难页想让它推理时改成启用即可）。`QwenVL` 侧**不注入**思考字段（DashScope 的 VL 模型不保证接受该字段），需要的话用「自定义请求体」自己加。
 - 与 DeepSeek 视觉接口相关的官方限制（已按此实现，无需额外配置）：图片必须放在 `user` 消息里（`system`/`assistant` 带图返回 400）；支持 JPEG/PNG/GIF/WebP；内联单图 ≤32MiB、请求体 ≤48MiB；模型侧会把图片等比缩放到约 1300×1300 以内、每张 ≤1024 tokens，因此返回的气泡坐标换算成百分比后与页面显示尺寸无关。
 - 注入元素都带 `notranslate`，不会被自身的网页翻译器二次翻译；`stop()`（页面卸载/重载/规则变更）会移除覆盖层与开关并还原父容器定位样式。
 - 油猴版：`dashscope.aliyuncs.com` 与 `api.deepseek.com` 都已在 `config-overrides.js` 的 `@connect` 列表里；改其它视觉服务商时把它的域名加进该列表即可。
+
+### 改动清单（相对上游）
+
+基线：上游 `dev` 分支 `a8c5a6f`（`package.json` 版本 2.1.0）。本机是浅克隆（`grafted`），与上游同步前先 `git fetch --unshallow origin`，再 `git rebase origin/dev`。
+
+| commit | 内容 |
+|---|---|
+| `a652c70` | 站点级 `aiPrompt` 字段 + 三套预置站点规则/术语表（GitHub、政治金融、成人站点） |
+| `c4869f6` | `QwenVL` 视觉接口 + 漫画翻译模式（图片发现 / 取图 / 覆盖层 / 悬浮开关 / 缓存） |
+| `47241ab` | `DeepSeekVL` 视觉槽（官方 API 图片输入）+ 视觉请求支持自定义请求体 |
+| `3b382f6` | 测试：钉死 DeepSeek 视觉槽的默认端点与支持图片的模型名 |
+| `e1c2927` | 视觉链路吃站点术语表/提示词（带提示词签名失效缓存）+ 思考模式真正注入 |
+| `ce427df` | 视觉接口按设置页排序（`sortOrder`）选取 |
+
+> README/文档自身的改动（`ef3604d` 起）不单列，用 `git log -- README.md` 查。
+
+**新增文件**（3 个源码 + 4 个测试）：
+
+| 文件 | 作用 |
+|---|---|
+| `src/manga/mangaManager.js` | 图片发现（IntersectionObserver + MutationObserver）、取图压缩、视觉接口调用、结果缓存、显隐开关与清理 |
+| `src/manga/overlay.js` | 覆盖层渲染（百分比定位、竖排、字号自适应）与右下角「漫」悬浮开关 |
+| `src/manga/prompt.js` | 视觉提示词拼装（基础指令 + 站点术语表/提示词）与模型返回的容错解析 |
+
+**修改的上游文件**（`git rebase` 时的冲突面就是下面这 16 个，另有本 `README.md` 本身）：
+
+| 关注点 | 文件 |
+|---|---|
+| 规则字段与新预设 | `src/config/rules.js`、`src/libs/rules.js`、`src/views/Options/Rules.js`、`src/config/i18n.js` |
+| 视觉接口注册 | `src/config/api.js`、`src/apis/trans.js`、`src/components/ApiProviderIcon.js` |
+| 站点提示词生效 | `src/libs/translator.js` |
+| 漫画生命周期与存储 | `src/libs/translatorManager.js`、`src/libs/storage.js`、`src/config/storage.js` |
+| 二进制跨上下文回传 | `src/libs/response.js`（新增 `expect: "base64"`） |
+| 测试补充 | `src/config/api.test.js`、`src/libs/rules.test.js`、`src/libs/translatorManager.test.js`、`src/libs/response.test.js` |
 
 ### 开发命令（本 fork 实测）
 
@@ -267,8 +301,10 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
 pnpm install
 CI=true pnpm test        # 注意：`pnpm test -- --watchAll=false` 会把 `--` 原样传给 jest，参数解析错乱
 pnpm build:chrome        # 产物在 build/chrome/，chrome://extensions 开发者模式加载
-pnpm format              # prettier
+pnpm exec prettier --write <改过的文件>   # 别直接跑 `pnpm format`
 ```
+
+> `pnpm format` 是上游脚本，会对全仓库执行 prettier。本机装的 prettier 版本会重排 `src/config/i18n.js` 里既有的 `TERMINOLOGY_PLAYGROUND_I18N` 段落（约 90 行与本次改动无关的 diff），所以只对改动过的文件跑 `pnpm exec prettier --write`。
 
 ### 加载方式（本 fork 构建产物）
 
@@ -289,3 +325,4 @@ cd build/chrome && npx bestzip ../kiss-translator-personal-fork-chrome.zip * .no
 3. reuters.com 文章：`rate hike→加息`、`hawkish→鹰派`。
 4. 任一成人站点：术语与语气（央求/羞耻等）是否落地，标题/标签用中文社区惯用说法。
 5. e-hentai / nhentai 阅读页：右下角出现「漫」按钮 → 点击后气泡被中文覆盖、竖排正确、翻页/滚动后新图自动处理 → 再点按钮切回原文。
+6. 在规则里改一条术语表（或改 `aiPrompt`）→ 刷新漫画页：译文应随之变化（缓存条目带提示词签名，站点规则一变旧缓存即失效）；若接口思考模式改成启用，请求体里会带 `thinking:{"type":"enabled"}`。
