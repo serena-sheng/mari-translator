@@ -86,7 +86,28 @@ test("Qwen-VL 与 DeepSeek 视觉接口都是 OpenAI 兼容的 image_url 请求"
   }
 });
 
-test("自定义请求体会合并进视觉请求（如关闭 DeepSeek 思考模式）", async () => {
+test("DeepSeek 视觉请求按接口配置注入思考模式，Qwen 侧不注入未知字段", async () => {
+  await callVisionApi({
+    apiSetting: apiOf(OPT_TRANS_DEEPSEEKVL),
+    imageDataUrl: IMAGE,
+    prompt: PROMPT,
+  });
+  const deepseekBody = JSON.parse(fetchData.mock.calls[0][1].body);
+  // DeepSeek 的思考模式默认开启；视觉槽默认 disabled，必须真的把字段带上去
+  expect(deepseekBody.thinking).toEqual({ type: "disabled" });
+
+  fetchData.mockClear();
+  await callVisionApi({
+    apiSetting: apiOf(OPT_TRANS_QWENVL),
+    imageDataUrl: IMAGE,
+    prompt: PROMPT,
+  });
+  const qwenBody = JSON.parse(fetchData.mock.calls[0][1].body);
+  expect(qwenBody.thinking).toBeUndefined();
+  expect(qwenBody.enable_thinking).toBeUndefined();
+});
+
+test("自定义请求体会合并进视觉请求（可覆盖思考等参数）", async () => {
   await callVisionApi({
     apiSetting: {
       ...apiOf(OPT_TRANS_DEEPSEEKVL),

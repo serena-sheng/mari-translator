@@ -213,17 +213,49 @@ describe("MangaManager", () => {
     manager.stop();
   });
 
-  test("命中缓存不再请求接口，直接渲染覆盖层", async () => {
+  test("同规则下命中缓存不再请求接口，直接渲染覆盖层", async () => {
+    const first = createManager();
+    first.start();
+    await flush();
+    const firstImg = createImage();
+    MockIntersectionObserver.instances[0].trigger(firstImg);
+    await flush();
+    expect(callVisionApi).toHaveBeenCalledTimes(1);
+    first.stop();
+
+    // 落盘内容里带着提示词签名；同规则再进页面（新的管理器实例）应直接命中缓存
+    const written = setMangaCache.mock.calls.at(-1)[0];
+    expect(written[IMAGE_URL].promptSig).toBeTruthy();
+    jest.clearAllMocks();
+    getMangaCache.mockResolvedValue(written);
+
+    const second = createManager();
+    second.start();
+    await flush();
+    const secondImg = createImage();
+    MockIntersectionObserver.instances[1].trigger(secondImg);
+    await flush();
+
+    expect(callVisionApi).not.toHaveBeenCalled();
+    expect(fetchData).not.toHaveBeenCalled();
+    expect(overlayOf().textContent).toBe("你好");
+    expect(setMangaCache).not.toHaveBeenCalled();
+
+    second.stop();
+  });
+
+  test("站点规则变了（术语表/提示词）时旧缓存不再复用，重新请求并覆盖渲染", async () => {
     getMangaCache.mockResolvedValue({
       [IMAGE_URL]: {
         bubbles: [
-          { box: [0, 0, 100, 100], src: "", dst: "缓存译文", vertical: false },
+          { box: [0, 0, 100, 100], src: "", dst: "旧译文", vertical: false },
         ],
         updatedAt: Date.now(),
+        promptSig: "stale-signature",
       },
     });
 
-    const manager = createManager();
+    const manager = createManager({ aiTerms: "中出し,内射" });
     manager.start();
     await flush();
 
@@ -231,9 +263,28 @@ describe("MangaManager", () => {
     MockIntersectionObserver.instances[0].trigger(img);
     await flush();
 
-    expect(callVisionApi).not.toHaveBeenCalled();
-    expect(fetchData).not.toHaveBeenCalled();
-    expect(overlayOf().textContent).toBe("缓存译文");
+    expect(callVisionApi).toHaveBeenCalledTimes(1);
+    expect(overlayOf().textContent).toBe("你好");
+
+    manager.stop();
+  });
+
+  test("站点术语表与补充提示词进入视觉提示词", async () => {
+    const manager = createManager({
+      aiTerms: "中出し,内射\ntransformer,",
+      aiPrompt: "语气词里的情绪要体现出来。",
+    });
+    manager.start();
+    await flush();
+
+    const img = createImage();
+    MockIntersectionObserver.instances[0].trigger(img);
+    await flush();
+
+    const { prompt } = callVisionApi.mock.calls[0][0];
+    expect(prompt).toContain("中出し → 内射");
+    expect(prompt).toContain("transformer → 保留原文");
+    expect(prompt).toContain("本站点补充要求:\n语气词里的情绪要体现出来。");
 
     manager.stop();
   });

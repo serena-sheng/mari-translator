@@ -5,6 +5,8 @@
  * 前后解释文字，或字段缺失，因此解析层必须容忍这些形态，失败时返回空数组。
  */
 
+import { parseAITerms } from "../libs/utils";
+
 /**
  * 漫画气泡识别的系统提示词。
  * 约定返回 `[{box:[x1,y1,x2,y2], src, dst, vertical}]`：
@@ -21,6 +23,43 @@ export const MANGA_VISION_PROMPT = `你是漫画翻译引擎。检测图片中�
 
 const isFiniteNumber = (value) =>
   typeof value === "number" && Number.isFinite(value);
+
+/**
+ * 由站点规则拼装完整的视觉提示词：固定基础指令 + 站点术语表 + 站点补充要求（`aiPrompt`）。
+ *
+ * 站点两项都没配时直接返回基础指令（与不接站点规则时行为一致）；术语表沿用
+ * `parseAITerms` 的格式（`原文,译文`，无译文表示保留原文）。
+ *
+ * @param {Object} [rule]
+ * @param {string} [rule.aiPrompt] 站点级补充要求
+ * @param {string} [rule.aiTerms] 站点级术语表
+ * @returns {string} 可直接发给视觉模型的系统提示词
+ */
+export const buildMangaVisionPrompt = ({
+  aiPrompt = "",
+  aiTerms = "",
+} = {}) => {
+  const glossary = Object.entries(parseAITerms(aiTerms));
+  const extraPrompt = String(aiPrompt || "").trim();
+  if (!glossary.length && !extraPrompt) return MANGA_VISION_PROMPT;
+
+  const sections = [MANGA_VISION_PROMPT];
+
+  if (glossary.length) {
+    const lines = glossary.map(([term, translation]) =>
+      translation ? `${term} → ${translation}` : `${term} → 保留原文`
+    );
+    sections.push(
+      `术语表(优先使用下列译法,未列出的按语境直译):\n${lines.join("\n")}`
+    );
+  }
+  if (extraPrompt) {
+    sections.push(`本站点补充要求:\n${extraPrompt}`);
+  }
+  sections.push("以上补充要求不改变输出格式:仍然只输出 JSON 数组。");
+
+  return sections.join("\n\n");
+};
 
 /**
  * 归一化单个气泡数据，剔除坐标或译文非法的条目。

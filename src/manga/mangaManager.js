@@ -10,9 +10,14 @@
 import { API_SPE_TYPES, newI18n } from "../config";
 import { getMangaCache, setMangaCache } from "../libs/storage";
 import { fetchData } from "../libs/fetch";
+import { getCacheDigest } from "../libs/cacheDigest";
 import { kissLog } from "../libs/log";
 import { callVisionApi } from "../apis/trans";
-import { MANGA_VISION_PROMPT, parseVisionResult } from "./prompt";
+import {
+  MANGA_VISION_PROMPT,
+  buildMangaVisionPrompt,
+  parseVisionResult,
+} from "./prompt";
 import { attachOverlay, mountMangaToggle } from "./overlay";
 
 const MIN_IMAGE_EDGE = 300; // 小于该边长的图片视为图标/装饰图，跳过
@@ -23,6 +28,7 @@ const MAX_CONCURRENT = 2; // 同时进行的视觉请求数量
 const ROOT_MARGIN = "300px"; // 视口预取范围
 const CACHE_SAVE_DELAY = 1000; // 缓存落盘防抖
 const IMAGE_LOAD_TIMEOUT = 15000; // 等待图片解码的兜底超时
+const MANGA_CACHE_SALT = "KISS-Translator-MANGA"; // 提示词签名用的盐
 
 export default class MangaManager {
   #rule = {};
@@ -36,6 +42,8 @@ export default class MangaManager {
   #pendingRoots = new Set(); // 待扫描的新增节点 / 换了 src 的图片
   #cache = {};
   #cacheReady = Promise.resolve();
+  #prompt = MANGA_VISION_PROMPT; // 站点术语表/提示词拼装后的视觉提示词
+  #promptSig = ""; // 提示词签名：站点规则变化时让旧缓存失效
   #cacheSaveTimer = null;
   #queue = [];
   #activeCount = 0;
@@ -62,7 +70,12 @@ export default class MangaManager {
 
     this.#started = true;
     this.#apiSetting = apiSetting;
-    this.#cacheReady = this.#loadCache();
+    // 站点规则里的术语表与补充提示词直接进视觉提示词（漫画与整页翻译共用同一套规则配置）
+    this.#prompt = buildMangaVisionPrompt({
+      aiPrompt: this.#rule?.aiPrompt,
+      aiTerms: this.#rule?.aiTerms,
+    });
+    this.#cacheReady = this.#initCache();
 
     const i18n = newI18n(this.#setting.uiLang || "zh");
     this.#toggle = mountMangaToggle({
@@ -226,9 +239,9 @@ export default class MangaManager {
     const size = await this.#ensureImageReady(img);
     if (this.#destroyed || !size) return;
 
-    // 缓存命中：直接渲染，不再请求接口
+    // 缓存命中：直接渲染，不再请求接口（提示词签名不一致说明站点规则变了，需要重译）
     const cached = this.#cache[url];
-    if (cached?.bubbles) {
+    if (cached?.bubbles && cached.promptSig === this.#promptSig) {
       this.#render(img, url, cached.bubbles);
       return;
     }
@@ -242,7 +255,7 @@ export default class MangaManager {
     const raw = await callVisionApi({
       apiSetting: this.#apiSetting,
       imageDataUrl,
-      prompt: MANGA_VISION_PROMPT,
+      prompt: this.#prompt,
     });
     if (this.#destroyed) return;
 
@@ -373,8 +386,23 @@ export default class MangaManager {
     }
   }
 
+  /** 读缓存前先算出提示词签名：站点术语表/提示词改过之后，旧译文不再复用 */
+  async #initCache() {
+    try {
+      this.#promptSig = await getCacheDigest(this.#prompt, MANGA_CACHE_SALT);
+    } catch (err) {
+      kissLog("manga: prompt signature failed", err);
+      this.#promptSig = "";
+    }
+    await this.#loadCache();
+  }
+
   #storeCache(url, bubbles) {
-    this.#cache[url] = { bubbles, updatedAt: Date.now() };
+    this.#cache[url] = {
+      bubbles,
+      updatedAt: Date.now(),
+      promptSig: this.#promptSig,
+    };
 
     const keys = Object.keys(this.#cache);
     if (keys.length > MAX_CACHE_ENTRIES) {

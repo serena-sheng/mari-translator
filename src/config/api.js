@@ -543,6 +543,14 @@ export const THINKING_API_REGISTRY = {
       disable: "explicit",
     }),
   },
+  // DeepSeek 视觉槽与文本槽同协议：登记后视觉请求才会按接口配置里的思考模式注入 thinking 字段
+  [OPT_TRANS_DEEPSEEKVL]: {
+    adapter: "deepseek",
+    resolveCapability: resolveFixedCapability(["max", "high"], {
+      enable: "explicit",
+      disable: "explicit",
+    }),
+  },
   [OPT_TRANS_OPENCODEGO]: {
     adapter: "deepseek",
     resolveCapability: resolveFixedCapability(["max", "high"], {

@@ -255,9 +255,11 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
   也支持任何其它 OpenAI 兼容的视觉服务（豆包 Ark、Kimi、SiliconFlow 托管的开源 VL 等）：改 `url` / `model` / `key` 即可。该槽默认关闭聚合与流式，漫画翻译走独立的单图请求链路（每次一张图；接口默认超时 90s，可在接口配置里改）。
 - 开启方式：在目标站点的网页规则里把「漫画翻译」设为**开启**。此时页面右下角出现「漫」悬浮按钮，点击可在译文/原文之间切换。
 - 工作方式：`IntersectionObserver` + `MutationObserver` 只处理进入视口的 `≥300px` 图片（懒加载、翻页原地换 `src`、SPA 都覆盖）；图片经 background 代理下载转 dataURL（跨域/防盗链不受 CORS 限制），宽度超过 1500px 先压缩再发送；视觉模型返回严格 JSON（`box`/`src`/`dst`/`vertical`），带 markdown 围栏等脏输出会被容错解析；结果按图片 URL 缓存（最多 200 条，超出按更新时间淘汰），覆盖层用百分比定位，图片缩放时自动跟随，`vertical: true` 的气泡竖排渲染。
-- 与 DeepSeek 视觉接口相关的官方限制（已按此实现，无需额外配置）：图片必须放在 `user` 消息里（`system`/`assistant` 带图返回 400）；支持 JPEG/PNG/GIF/WebP；内联单图 ≤32MiB、请求体 ≤48MiB；模型侧会把图片等比缩放到约 1300×1300 以内、每张 ≤1024 tokens，因此返回的气泡坐标换算成百分比后与页面显示尺寸无关。DeepSeek 的思考模式默认开启，若想更快/更省，可在该接口的「自定义请求体」里填 `{"thinking":{"type":"disabled"}}`（视觉请求会合并这个字段）。
+- **站点规则同时作用于视觉链路**：漫画翻译的视觉提示词 = 固定基础指令 + 该站点规则的术语表（`aiTerms`，渲染成 `原文 → 译文`，无译文写「保留原文」）+ 该站点的补充提示词（`aiPrompt`，作为「本站点补充要求」），末尾重申「仍然只输出 JSON 数组」。也就是说预置的成人站点术语表/直译指令、GitHub 的编程术语表，对漫画译文同样生效。改了术语表或提示词后，旧图片缓存会自动失效（缓存条目带着提示词签名，签名不一致就重新识别）。
+- **思考模式对视觉请求同样生效**：视觉接口在设置页里选的思考模式/强度会按厂商协议注入（DeepSeek 的视觉槽默认 `disabled`，会真的带上 `thinking:{"type":"disabled"}`，避免白花 token；难页想让它推理时改成启用即可）。`QwenVL` 侧**不注入**思考字段（DashScope 的 VL 模型不保证接受该字段），需要的话用「自定义请求体」自己加。
+- 与 DeepSeek 视觉接口相关的官方限制（已按此实现，无需额外配置）：图片必须放在 `user` 消息里（`system`/`assistant` 带图返回 400）；支持 JPEG/PNG/GIF/WebP；内联单图 ≤32MiB、请求体 ≤48MiB；模型侧会把图片等比缩放到约 1300×1300 以内、每张 ≤1024 tokens，因此返回的气泡坐标换算成百分比后与页面显示尺寸无关。
 - 注入元素都带 `notranslate`，不会被自身的网页翻译器二次翻译；`stop()`（页面卸载/重载/规则变更）会移除覆盖层与开关并还原父容器定位样式。
-- 油猴版：`@connect dashscope.aliyuncs.com` 已存在，用 DeepSeek 视觉需在 `config-overrides.js` 的 `@connect` 列表加上 `api.deepseek.com`（改其它服务商同理）。
+- 油猴版：`dashscope.aliyuncs.com` 与 `api.deepseek.com` 都已在 `config-overrides.js` 的 `@connect` 列表里；改其它视觉服务商时把它的域名加进该列表即可。
 
 ### 开发命令（本 fork 实测）
 

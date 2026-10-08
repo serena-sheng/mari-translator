@@ -3025,7 +3025,16 @@ export const callVisionApi = async ({
   prompt,
   signal,
 }) => {
-  const { url, key, model, httpTimeout, customBody } = apiSetting;
+  const {
+    url,
+    key,
+    model,
+    httpTimeout,
+    customBody,
+    apiType,
+    thinkingMode,
+    thinkingEffort,
+  } = apiSetting;
   if (!url?.trim()) {
     throw new Error("Vision API url is empty");
   }
@@ -3049,8 +3058,17 @@ export const callVisionApi = async ({
     max_tokens: 4096,
   };
 
+  // 与文本翻译共用同一套思考参数管线：视觉槽在接口配置里选的思考模式/强度会真正生效
+  // （DeepSeek 默认关闭思考；视觉槽未登记适配器时不注入任何字段）
+  applyThinkingParameters(body, {
+    apiType,
+    url,
+    model,
+    thinkingMode,
+    thinkingEffort,
+  });
+
   // 与文本翻译一致：允许在接口配置里用「自定义请求体」覆盖/追加参数
-  // （例如 DeepSeek 视觉请求可传 {"thinking":{"type":"disabled"}} 关掉思考模式）
   if (customBody?.trim()) {
     Object.assign(body, parseJsonObj(customBody));
   }

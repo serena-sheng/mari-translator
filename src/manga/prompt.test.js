@@ -1,8 +1,45 @@
-import { MANGA_VISION_PROMPT, parseVisionResult } from "./prompt";
+import {
+  MANGA_VISION_PROMPT,
+  buildMangaVisionPrompt,
+  parseVisionResult,
+} from "./prompt";
 
 test("prompt requires a JSON-only answer and vertical flag", () => {
   expect(MANGA_VISION_PROMPT).toContain('"vertical"');
   expect(MANGA_VISION_PROMPT).toContain("只输出 JSON");
+});
+
+test("site rule without glossary or instruction keeps the base prompt untouched", () => {
+  expect(buildMangaVisionPrompt()).toBe(MANGA_VISION_PROMPT);
+  expect(buildMangaVisionPrompt({ aiPrompt: "   ", aiTerms: "" })).toBe(
+    MANGA_VISION_PROMPT
+  );
+});
+
+test("site glossary and instruction are appended, and the JSON contract is restated", () => {
+  const prompt = buildMangaVisionPrompt({
+    aiTerms: "中出し,内射\ntransformer,\n寝取られ,NTR(伴侣被睡走)",
+    aiPrompt: "语气词里的情绪要体现出来。",
+  });
+
+  expect(prompt.startsWith(MANGA_VISION_PROMPT)).toBe(true);
+  expect(prompt).toContain("术语表(优先使用下列译法,未列出的按语境直译):");
+  expect(prompt).toContain("中出し → 内射");
+  // 无译文的条目 = 保留原文
+  expect(prompt).toContain("transformer → 保留原文");
+  expect(prompt).toContain("寝取られ → NTR(伴侣被睡走)");
+  expect(prompt).toContain("本站点补充要求:\n语气词里的情绪要体现出来。");
+  expect(prompt.trimEnd().endsWith("仍然只输出 JSON 数组。")).toBe(true);
+});
+
+test("only the instruction or only the glossary still produces a usable prompt", () => {
+  const withTermsOnly = buildMangaVisionPrompt({ aiTerms: "a,b" });
+  expect(withTermsOnly).toContain("a → b");
+  expect(withTermsOnly).not.toContain("本站点补充要求");
+
+  const withPromptOnly = buildMangaVisionPrompt({ aiPrompt: "只翻译对白" });
+  expect(withPromptOnly).toContain("本站点补充要求:\n只翻译对白");
+  expect(withPromptOnly).not.toContain("术语表");
 });
 
 test("parses a plain JSON array", () => {
