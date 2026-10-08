@@ -147,6 +147,9 @@ const createGutters = (
     GUTTER_MAX_WIDTH
   );
   const imageWidth = Math.max(parentWidth - gutterWidth * 2, MIN_IMAGE_WIDTH);
+  // 图片当前的渲染宽度。只有它比「腾出两侧栏位后的目标宽度」更宽时才需要压窄；
+  // 本身就更小的图若强行设成目标宽度会被放大变形（真机上 560px 的图被拉到 832px）。
+  const beforeWidth = img.offsetWidth || img.clientWidth || parentWidth;
 
   // 记住图片原本的内联样式，退出/隐藏时还原（页面自己的 CSS 不动）
   const originalStyle = {
@@ -158,6 +161,12 @@ const createGutters = (
   };
   // 关键：不只缩宽度，还要左右各留出栏宽的外边距，否则图片（常见左对齐）会和侧栏重叠
   const applyNarrow = () => {
+    // beforeWidth 为 0 表示量不到布局（如 jsdom、图片尚未布局），此时按「图占满容器」处理，仍然压窄
+    if (beforeWidth > 0 && imageWidth >= beforeWidth) {
+      // 容器本来就放得下两侧栏位，不动图片
+      restoreImage();
+      return;
+    }
     img.style.width = `${imageWidth}px`;
     img.style.maxWidth = "none";
     img.style.height = "auto";

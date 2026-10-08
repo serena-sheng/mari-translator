@@ -451,6 +451,35 @@ describe("MangaManager", () => {
     manager.stop();
   });
 
+  test("侧栏弹幕：图片本身比「腾栏后的目标宽度」还窄时，不拉伸图片", async () => {
+    const manager = createManager();
+    // 容器 800 → 栏宽 clamp(160,150,300)=160 → 目标图宽 480；图片只有 300，不该被拉宽
+    const img = createImage(IMAGE_URL, 300, 400);
+    Object.defineProperty(img, "offsetWidth", {
+      value: 300,
+      configurable: true,
+    });
+    Object.defineProperty(img.parentElement, "clientWidth", {
+      value: 800,
+      configurable: true,
+    });
+    manager.start();
+    await flush();
+    MockIntersectionObserver.instances[0].trigger(img);
+    await flush();
+
+    document
+      .querySelector(".kiss-manga-toggle")
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(document.querySelector(".kiss-manga-toggle").textContent).toBe("幕");
+
+    // 栏位照常铺，但图片宽度一个字节都不动（保持原渲染宽度）
+    expect(document.querySelectorAll(".kiss-manga-gutter")).toHaveLength(2);
+    expect(img.style.width).toBe("");
+
+    manager.stop();
+  });
+
   test("同一 img 节点原地换 src（翻页懒加载）时重新处理，旧覆盖层被替换", async () => {
     const SECOND_URL = "https://cdn.example.com/pages/02.jpg";
     callVisionApi
