@@ -8,6 +8,7 @@
  */
 
 import { API_SPE_TYPES, newI18n } from "../config";
+import { getEnabledApis } from "../libs/apiSelection";
 import { getMangaCache, setMangaCache } from "../libs/storage";
 import { fetchData } from "../libs/fetch";
 import { getCacheDigest } from "../libs/cacheDigest";
@@ -141,12 +142,9 @@ export default class MangaManager {
       ? this.#setting.transApis
       : [];
     // 视觉接口必须有 Key 才能真正调用；只启用不填 Key 不算可用配置。
-    // 不绑定具体服务商：QwenVL / DeepSeekVL 等任何 vision 能力接口都可用，谁启用就用谁。
-    return apis.find(
-      (api) =>
-        API_SPE_TYPES.vision.has(api?.apiType) &&
-        !api.isDisabled &&
-        api.key?.trim()
+    // 顺序与设置页一致（按 sortOrder 再按下标），因此「第一个」就是用户在接口列表里看到的最靠前那个。
+    return getEnabledApis(apis).find(
+      (api) => API_SPE_TYPES.vision.has(api?.apiType) && api.key?.trim()
     );
   }
 

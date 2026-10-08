@@ -151,8 +151,11 @@ describe("MangaManager", () => {
   });
 
   test.each([
-    ["接口被禁用", { apiType: "QwenVL", isDisabled: true, key: "k" }],
-    ["缺少 API Key", { apiType: "QwenVL", key: "   " }],
+    [
+      "接口被禁用",
+      { apiSlug: "vision", apiType: "QwenVL", isDisabled: true, key: "k" },
+    ],
+    ["缺少 API Key", { apiSlug: "vision", apiType: "QwenVL", key: "   " }],
   ])(
     "未配置可用的 QwenVL 接口时不启动（%s），页面无任何注入",
     (_label, api) => {
@@ -411,6 +414,44 @@ describe("MangaManager", () => {
       model: "deepseek-flash",
     });
     expect(overlayOf()).not.toBeNull();
+
+    manager.stop();
+  });
+
+  test("多个视觉接口同时启用时，按设置页排序（sortOrder）取第一个", async () => {
+    const manager = new MangaManager({
+      rule: rule(),
+      setting: {
+        uiLang: "zh",
+        transApis: [
+          {
+            apiSlug: "qwen",
+            apiType: "QwenVL",
+            key: "k",
+            sortOrder: 5,
+            url: "https://dashscope.example.com/v1/chat/completions",
+            model: "qwen-vl-max-latest",
+          },
+          {
+            apiSlug: "ds",
+            apiType: "DeepSeekVL",
+            key: "k",
+            sortOrder: 0,
+            url: "https://api.deepseek.com/chat/completions",
+            model: "deepseek-flash",
+          },
+        ],
+      },
+    });
+    manager.start();
+    await flush();
+
+    const img = createImage();
+    MockIntersectionObserver.instances[0].trigger(img);
+    await flush();
+
+    // 数组里 QwenVL 在前，但 sortOrder 更小的是 DeepSeekVL —— 与设置页显示顺序一致
+    expect(callVisionApi.mock.calls[0][0].apiSetting.apiSlug).toBe("ds");
 
     manager.stop();
   });
