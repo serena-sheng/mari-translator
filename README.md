@@ -282,6 +282,7 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
 | `81d6721` | 修复：视觉返回的气泡坐标按「发送尺寸」换算（原图过宽时会整体偏位） |
 | `3270544` | 侧栏弹幕显示方式（「漫 → 幕 → 原」三态循环，`attachMangaLayer` 可运行时换模式） |
 | `a9d83f2` | 修复：退出弹幕模式时还原图片尺寸（不再留下被压窄的图） |
+| `9b1b468` | 修复：弹幕模式下不拉伸本身比栏位目标还窄的小图 |
 | `0f242e3` | 测试：无需真实 Key 的漫画链路 E2E harness（`tools/manga-e2e/`） |
 | `37e1757` | 工具：用 CDP 安装未打包扩展（不弹原生目录框） |
 
