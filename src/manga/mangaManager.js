@@ -61,7 +61,7 @@ const sentImageSize = (naturalWidth, naturalHeight) =>
 export default class MangaManager {
   #rule = {};
   #setting = {};
-  #apiSetting = null;
+  #apiSettings = []; // 按优先级排序的视觉接口列表：第一个是主接口，失败依次保底
   #io = null;
   #mo = null;
   #resizeObserver = null;
@@ -94,14 +94,14 @@ export default class MangaManager {
     if (this.#started || this.#destroyed) return;
     if (this.#rule?.mangaEnabled !== "true") return;
 
-    const apiSetting = this.#resolveVisionApiSetting();
-    if (!apiSetting) {
+    const apiSettings = this.#resolveVisionApiSettings();
+    if (apiSettings.length === 0) {
       kissLog("manga: no enabled vision api with api key configured, skip");
       return;
     }
 
     this.#started = true;
-    this.#apiSetting = apiSetting;
+    this.#apiSettings = apiSettings;
     // 站点规则里的术语表与补充提示词直接进视觉提示词（漫画与整页翻译共用同一套规则配置）
     this.#prompt = buildMangaVisionPrompt({
       aiPrompt: this.#rule?.aiPrompt,
@@ -232,13 +232,13 @@ export default class MangaManager {
     this.#persistMode();
   }
 
-  #resolveVisionApiSetting() {
+  #resolveVisionApiSettings() {
     const apis = Array.isArray(this.#setting?.transApis)
       ? this.#setting.transApis
       : [];
     // 视觉接口必须有 Key 才能真正调用；只启用不填 Key 不算可用配置。
-    // 顺序与设置页一致（按 sortOrder 再按下标），因此「第一个」就是用户在接口列表里看到的最靠前那个。
-    return getEnabledApis(apis).find(
+    // 顺序与设置页一致（按 sortOrder 再按下标）：第一个是主接口，其余是保底。
+    return getEnabledApis(apis).filter(
       (api) => API_SPE_TYPES.vision.has(api?.apiType) && api.key?.trim()
     );
   }
@@ -361,28 +361,54 @@ export default class MangaManager {
       return;
     }
 
-    const raw = await callVisionApi({
-      apiSetting: this.#apiSetting,
-      imageDataUrl: image.dataUrl,
-      prompt: this.#prompt,
-    });
-    if (this.#destroyed) return;
+    // 按优先级逐个尝试启用的视觉接口：主接口挂了（余额不足/超时/网络错/坐标全坏）
+    // 就落到下一个保底（例如本地 MLX/Ollama），直到有一个给出可用译文。
+    let bubbles = null;
+    let coordsRejected = false;
+    for (const apiSetting of this.#apiSettings) {
+      let raw = "";
+      try {
+        raw = await callVisionApi({
+          apiSetting,
+          imageDataUrl: image.dataUrl,
+          prompt: this.#prompt,
+        });
+      } catch (err) {
+        kissLog("manga: vision api failed, try next", apiSetting?.name, err);
+        continue;
+      }
+      if (this.#destroyed) return;
 
-    // 不带 bound 先解析一次，用来区分两种「空」：
-    //   模型返回了条目但坐标不可信 → 记成 coordsRejected 存下来，避免反复重试同一个坏结果；
-    //   模型本来就没返回条目（这张图没文字）→ 正常缓存。
-    const rawBubbles = parseVisionResult(raw);
-    const bubbles = parseVisionResult(raw, {
-      width: image.width,
-      height: image.height,
-    });
-    const coordsRejected = rawBubbles.length > 0 && bubbles.length === 0;
-    if (coordsRejected) {
-      kissLog("manga: vision boxes out of range, skip rendering", url);
+      // 不带 bound 先解析一次，用来区分两种「空」：
+      //   模型返回了条目但坐标不可信 → 换下一个接口试试；都不可信再记 coordsRejected；
+      //   模型本来就没返回条目（这张图没文字）→ 当作空结果。
+      const rawBubbles = parseVisionResult(raw);
+      const valid = parseVisionResult(raw, {
+        width: image.width,
+        height: image.height,
+      });
+      if (valid.length > 0) {
+        bubbles = valid;
+        coordsRejected = false;
+        break;
+      }
+      if (rawBubbles.length > 0) coordsRejected = true;
     }
-    this.#storeCache(url, bubbles, image.width, image.height, {
-      coordsRejected,
-    });
+
+    if (!bubbles) {
+      // 所有接口都失败，或所有有结果的接口坐标都不可信：记下来避免反复重试同一个坏结果
+      if (coordsRejected) {
+        kissLog(
+          "manga: vision boxes out of range on all apis, skip rendering",
+          url
+        );
+        this.#storeCache(url, [], image.width, image.height, {
+          coordsRejected: true,
+        });
+      }
+      return;
+    }
+    this.#storeCache(url, bubbles, image.width, image.height);
     this.#render(img, url, bubbles, image.width, image.height);
   }
 

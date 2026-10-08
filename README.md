@@ -249,10 +249,10 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
 
 ### 2. 漫画图片翻译（`QwenVL` / `DeepSeekVL`）
 
-- 新增两个视觉接口槽，都走 OpenAI 兼容的 `chat/completions` + `image_url` 协议，**谁启用就用谁**（按设置页里的接口排序取第一个启用的视觉接口；同时启用两个时，把想用的那个拖到前面或停用另一个）：
+- 新增两个视觉接口槽，都走 OpenAI 兼容的 `chat/completions` + `image_url` 协议，**按设置页顺序逐个尝试**（同时启用多个时排前面的先用；主接口欠费/超时/坐标全坏会自动落到后面的槽，见下文「本地保底」）：
   - `QwenVL`：`https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` + `qwen-vl-max-latest`；
   - `DeepSeekVL`：`https://api.deepseek.com/chat/completions` + `deepseek-flash`（DeepSeek 官方 API 自 2026-08 起支持图片输入，旧名 `deepseek-v4-flash-vision-exp` 已由最新 Flash 承接）。
-  也支持任何其它 OpenAI 兼容的视觉服务（豆包 Ark、Kimi、SiliconFlow 托管的开源 VL 等）：改 `url` / `model` / `key` 即可。该槽默认关闭聚合与流式，漫画翻译走独立的单图请求链路（每次一张图；接口默认超时 90s，可在接口配置里改）。
+  也支持任何其它 OpenAI 兼容的视觉服务（豆包 Ark、Kimi、SiliconFlow 托管的开源 VL、本机 MLX/Ollama 等）：改 `url` / `model` / `key` 即可。该槽默认关闭聚合与流式，漫画翻译走独立的单图请求链路（每次一张图；接口默认超时 90s，可在接口配置里改）。
 - 开启方式：在目标站点的网页规则里把「漫画翻译」设为**开启**。此时页面右下角出现悬浮按钮，循环切换：**嵌字**（「漫」= 译文盖在原图上）→ **侧栏弹幕**（「幕」= 图片压窄、译文贴在两侧栏里，纵向对齐原文、逐条向下堆积不重叠、统一 14px 横排）→ **原图**（「原」= 关掉译文并还原图片尺寸）。切换只改显示方式，不会重新请求接口。
 - 两种显示方式的分工：**嵌字**贴近原版面、适合对照阅读；**侧栏弹幕**不遮挡画面（栏位只在图片左右两侧，译文按气泡左右分栏），适合只想快速看对话时用。
 - 工作方式：`IntersectionObserver` + `MutationObserver` 只处理进入视口的 `≥300px` 图片（懒加载、翻页原地换 `src`、SPA 都覆盖）；图片经 background 代理下载转 dataURL（跨域图片不受 CORS 限制；若站点有防盗链导致下载被拒，则退回同源 canvas 兜底，跨域图片在兜底路径上会失败并跳过该图），宽度超过 1300px 先压缩再发送（DeepSeek 视觉侧内部长边上限就是约 1300，送更大纯属浪费带宽）；视觉模型返回严格 JSON（`box`/`src`/`dst`/`vertical`），带 markdown 围栏等脏输出会被容错解析；结果按图片 URL 缓存（最多 200 条，超出按更新时间淘汰），覆盖层用百分比定位 + `ResizeObserver` 重算字号，图片缩放时自动跟随，`vertical: true` 的气泡竖排渲染。
@@ -268,6 +268,33 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
   - 图片走 CDN + 一次性 `verify=` 令牌，令牌过期或缺会话 cookie 时 background 代理取图会 **403**；跨域图又没法用 canvas 兜底（画布被污染），最终表现为「该图直接跳过、没有覆盖层」。真机日志里能看到 `manga: image data unavailable`。
   - 三种显示方式在真机（`photos-slide-aid-393050`，原图 2216×3111、容器 1388px）实测通过：嵌字态译文盖在原气泡上；弹幕态每张已译图左右各一条栏位、图片压窄到 832px、条目统一 14px 横排且按「原文纵向中心」对齐叠加、互不重叠；「原图」态清空内联宽度、图片还原到 1388px 铺满容器。改用归一化坐标后，真机量化校验（15 页 20 条）中心偏差多为 0.2~0.5px，仅在原文框彼此重叠处被下推让位。
 - 油猴版：`dashscope.aliyuncs.com` 与 `api.deepseek.com` 都已在 `config-overrides.js` 的 `@connect` 列表里；改其它视觉服务商时把它的域名加进该列表即可。
+
+### 2.1 本地视觉保底（MLX，免费）
+
+云端视觉接口欠费、超时或坐标全坏时，漫画管理器会**按设置页顺序自动落到下一个启用的视觉槽**——把本地模型排在云端后面即可免费保底（想纯本地就把云端槽停用）。
+
+本机部署（Apple Silicon，已实测 M5/24GB）：
+
+```sh
+# 一次性：建环境 + 装 mlx-vlm + 下载模型（约 2.3GB）
+uv venv ~/mlx-serve --python 3.13
+uv pip install --python ~/mlx-serve/bin/python mlx-vlm
+~/mlx-serve/bin/python -c "from huggingface_hub import snapshot_download; print(snapshot_download('mlx-community/Qwen3-VL-4B-Instruct-4bit'))"
+
+# 启动（OpenAI 兼容服务，端口 8080；脚本在 ~/mlx-serve/start.sh）
+~/mlx-serve/start.sh &
+```
+
+接口配置（设置页「添加接口」选 `QwenVL`）：
+
+| 字段 | 值 |
+|---|---|
+| url | `http://127.0.0.1:8080/v1/chat/completions` |
+| key | 任意非空，如 `local` |
+| model | `mlx-community/Qwen3-VL-4B-Instruct-4bit` |
+| 超时 | 建议 240s（首次加载模型要几十秒，之后每页约 5-15s） |
+
+模型选型理由：Qwen3-VL 官方 32 语 OCR（含日/中）、竖排文档是其训练强项，Qwen 底模的日→中翻译在开源模型里第一梯队；4B-4bit 在 24GB 统一内存下只占约 3GB，M5 上速度明显快于同档 llama.cpp。备选：`Qwen3-VL-8B-Instruct-4bit`（更准更慢）、`Qwen3-VL-2B-Instruct-4bit`（更快更易漏小字）。
 
 ### 改动清单（相对上游）
 

@@ -497,6 +497,121 @@ describe("MangaManager", () => {
     second.stop();
   });
 
+  test("主视觉接口失败时自动落到下一个启用的视觉接口", async () => {
+    callVisionApi
+      .mockRejectedValueOnce(new Error("insufficient balance"))
+      .mockResolvedValueOnce(
+        JSON.stringify([
+          {
+            box: norm([10, 10, 300, 120]),
+            src: "",
+            dst: "兜底译文",
+            vertical: false,
+          },
+        ])
+      );
+
+    const manager = createManager(null, {
+      transApis: [
+        {
+          apiSlug: "primary",
+          apiType: "DeepSeekVL",
+          url: "https://api.deepseek.com/chat/completions",
+          key: "k1",
+          model: "deepseek-flash",
+          isDisabled: false,
+          sortOrder: 1,
+        },
+        {
+          apiSlug: "local",
+          apiType: "QwenVL",
+          url: "http://127.0.0.1:8080/v1/chat/completions",
+          key: "local",
+          model: "qwen3-vl-4b-4bit",
+          isDisabled: false,
+          sortOrder: 2,
+        },
+      ],
+    });
+    const img = createImage();
+    manager.start();
+    await flush();
+    MockIntersectionObserver.instances[0].trigger(img);
+    await flush();
+
+    // 先打主接口（挂了），再落到本地槽
+    expect(callVisionApi).toHaveBeenCalledTimes(2);
+    expect(callVisionApi.mock.calls[0][0].apiSetting.apiSlug).toBe("primary");
+    expect(callVisionApi.mock.calls[1][0].apiSetting.apiSlug).toBe("local");
+    expect(
+      [...document.querySelectorAll(".kiss-manga-bubble")].map(
+        (b) => b.textContent
+      )
+    ).toEqual(["兜底译文"]);
+
+    manager.stop();
+  });
+
+  test("主接口坐标全坏时也落到下一个接口；全都坏才记 coordsRejected", async () => {
+    const grid = JSON.stringify(
+      Array.from({ length: 32 }, (_, i) => ({
+        box: [i / 10, 0, (i + 1) / 10, 0.05],
+        src: "",
+        dst: "坏结果",
+        vertical: false,
+      }))
+    );
+    callVisionApi
+      .mockResolvedValueOnce(grid)
+      .mockResolvedValueOnce(
+        JSON.stringify([
+          {
+            box: norm([10, 10, 300, 120]),
+            src: "",
+            dst: "本地译文",
+            vertical: false,
+          },
+        ])
+      );
+
+    const manager = createManager(null, {
+      transApis: [
+        {
+          apiSlug: "primary",
+          apiType: "DeepSeekVL",
+          url: "https://api.deepseek.com/chat/completions",
+          key: "k1",
+          model: "deepseek-flash",
+          isDisabled: false,
+          sortOrder: 1,
+        },
+        {
+          apiSlug: "local",
+          apiType: "QwenVL",
+          url: "http://127.0.0.1:8080/v1/chat/completions",
+          key: "local",
+          model: "qwen3-vl-4b-4bit",
+          isDisabled: false,
+          sortOrder: 2,
+        },
+      ],
+    });
+    const img = createImage();
+    manager.start();
+    await flush();
+    MockIntersectionObserver.instances[0].trigger(img);
+    await flush();
+
+    expect(callVisionApi).toHaveBeenCalledTimes(2);
+    expect(
+      [...document.querySelectorAll(".kiss-manga-bubble")].map(
+        (b) => b.textContent
+      )
+    ).toEqual(["本地译文"]);
+
+    manager.stop();
+  });
+
   test("侧栏弹幕：译文中心对齐原文纵向中心（不是从文字顶部对齐）", async () => {
     callVisionApi.mockResolvedValue(
       JSON.stringify([
