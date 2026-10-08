@@ -276,13 +276,14 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
 
 > README/文档自身的改动（`ef3604d` 起）不单列，用 `git log -- README.md` 查。
 
-**新增文件**（3 个源码 + 4 个测试）：
+**新增文件**（3 个源码 + 4 个测试 + 1 个 E2E harness 目录）：
 
 | 文件 | 作用 |
 |---|---|
 | `src/manga/mangaManager.js` | 图片发现（IntersectionObserver + MutationObserver）、取图压缩、视觉接口调用、结果缓存、显隐开关与清理 |
 | `src/manga/overlay.js` | 覆盖层渲染（百分比定位、竖排、字号自适应）与右下角「漫」悬浮开关 |
 | `src/manga/prompt.js` | 视觉提示词拼装（基础指令 + 站点术语表/提示词）与模型返回的容错解析 |
+| `tools/manga-e2e/` | 漫画链路 E2E harness：`server.mjs`（桩视觉接口）+ `drive.mjs`（裸 CDP）+ `drive-ego.mjs`（走 ego Space API），不需要真实 API key |
 
 **修改的上游文件**（`git rebase` 时的冲突面就是下面这 16 个，另有本 `README.md` 本身）：
 
@@ -297,14 +298,35 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
 
 ### 开发命令（本 fork 实测）
 
+上游锁定 **pnpm 9.14.4**（见 `.pnpm-version` 与 `.github/workflows/release.yml`）。用更新的 pnpm（≥ 10）
+连 `pnpm install` 都跑不起来：新版不再读 `package.json` 里的 `pnpm.overrides`，会以
+`ERR_PNPM_VERIFY_DEPS_BEFORE_RUN` 拒绝执行，并在安装时把那三个安全 override 从锁文件里丢掉。用锁定版本跑即可：
+
 ```sh
-pnpm install
-CI=true pnpm test        # 注意：`pnpm test -- --watchAll=false` 会把 `--` 原样传给 jest，参数解析错乱
-pnpm build:chrome        # 产物在 build/chrome/，chrome://extensions 开发者模式加载
+PNPM="npx -y pnpm@9.14.4"
+$PNPM install
+CI=true $PNPM test       # 注意：`pnpm test -- --watchAll=false` 会把 `--` 原样传给 jest，参数解析错乱
+$PNPM build:chrome       # 产物在 build/chrome/，chrome://extensions 开发者模式加载
 pnpm exec prettier --write <改过的文件>   # 别直接跑 `pnpm format`
 ```
 
 > `pnpm format` 是上游脚本，会对全仓库执行 prettier。本机装的 prettier 版本会重排 `src/config/i18n.js` 里既有的 `TERMINOLOGY_PLAYGROUND_I18N` 段落（约 90 行与本次改动无关的 diff），所以只对改动过的文件跑 `pnpm exec prettier --write`。
+
+### 自动化验证（漫画链路 E2E，不需要 API Key）
+
+`tools/manga-e2e/` 里的 harness 把视觉接口打到本地桩服务，因此可以在没有 Qwen/DeepSeek key 的情况下
+把漫画链路整条跑通并断言：扩展装载 → 规则命中 → 悬浮开关 → 图片发现 → 取图转 dataURL → 视觉请求
+（含站点术语表 / `aiPrompt` / 思考参数）→ 覆盖层渲染（坐标换算、竖排）→ 缓存与「改术语表即失效」。
+
+```sh
+node tools/manga-e2e/server.mjs &                                   # 桩服务
+node tools/manga-e2e/drive.mjs                                      # 方式一：一次性 ego 实例 + 裸 CDP（零依赖，不碰日常浏览器）
+ego-browser --ego-server-name=kiss-e2e nodejs < tools/manga-e2e/drive-ego.mjs   # 方式二：走 ego 自己的 Space API（过程可见 + 截图）
+```
+
+两种方式断言同一批行为（33 条 / 27 条），失败以非 0 退出码结束。方式二需要先起一个带本扩展的 ego 服务，
+细节与踩坑（storage 存 JSON 字符串、ego profile 持久导致的缓存命中、注入元素异步出现）见
+`tools/manga-e2e/README.md`。
 
 ### 加载方式（本 fork 构建产物）
 
@@ -326,3 +348,6 @@ cd build/chrome && npx bestzip ../kiss-translator-personal-fork-chrome.zip * .no
 4. 任一成人站点：术语与语气（央求/羞耻等）是否落地，标题/标签用中文社区惯用说法。
 5. e-hentai / nhentai 阅读页：右下角出现「漫」按钮 → 点击后气泡被中文覆盖、竖排正确、翻页/滚动后新图自动处理 → 再点按钮切回原文。
 6. 在规则里改一条术语表（或改 `aiPrompt`）→ 刷新漫画页：译文应随之变化（缓存条目带提示词签名，站点规则一变旧缓存即失效）；若接口思考模式改成启用，请求体里会带 `thinking:{"type":"enabled"}`。
+
+> 第 5、6 条（含「改术语表即失效」「按 sortOrder 选视觉槽」「DeepSeek 思考参数真的进请求体」）已被
+> `tools/manga-e2e/` 的 E2E harness 自动覆盖，不必每次手点；剩下真正需要人眼判断的是第 2–4 条的译文质量。
