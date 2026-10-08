@@ -7,7 +7,7 @@
 > 1. **站点级 AI 提示词覆盖**：网页规则新增 `aiPrompt` 字段，追加到该站点 AI 翻译的系统提示词末尾（留空不生效）。
 >    内置三套站点规则与术语表：GitHub（编程/AI）、路透/彭博/BBC/经济学人等（政治金融）、成人站点（日英术语 + 露骨内容直译指令）。
 > 2. **漫画图片翻译**：新增视觉接口类型 `QwenVL` / `DeepSeekVL`（OpenAI 兼容协议，DashScope、DeepSeek 官方 API、豆包 Ark、Kimi 等均可）。
->    在规则中把「漫画翻译」设为开启后，页面右下角出现「漫」悬浮按钮：自动发现视口内的漫画大图，调用视觉模型取回气泡坐标与译文并覆盖渲染（支持竖排），点击按钮可切换原文/译文；视觉输入会带上该站点的术语表与补充提示词，思考模式也可按接口配置。
+>    在规则中把「漫画翻译」设为开启后，页面右下角出现悬浮按钮，循环切换三种显示方式：**嵌字**（「漫」，译文直接盖在原气泡上，支持竖排）→ **侧栏弹幕**（「幕」，把图片压窄、译文像弹幕一样贴在两侧栏里，不挡画面）→ **原图**（「原」）。视觉输入会带上该站点的术语表与补充提示词，思考模式也可按接口配置。
 >
 > 使用、改动清单与手测见 [个人 fork 改动](#个人-fork-改动personal-fork)。
 
@@ -253,7 +253,8 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
   - `QwenVL`：`https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` + `qwen-vl-max-latest`；
   - `DeepSeekVL`：`https://api.deepseek.com/chat/completions` + `deepseek-flash`（DeepSeek 官方 API 自 2026-08 起支持图片输入，旧名 `deepseek-v4-flash-vision-exp` 已由最新 Flash 承接）。
   也支持任何其它 OpenAI 兼容的视觉服务（豆包 Ark、Kimi、SiliconFlow 托管的开源 VL 等）：改 `url` / `model` / `key` 即可。该槽默认关闭聚合与流式，漫画翻译走独立的单图请求链路（每次一张图；接口默认超时 90s，可在接口配置里改）。
-- 开启方式：在目标站点的网页规则里把「漫画翻译」设为**开启**。此时页面右下角出现「漫」悬浮按钮，点击可在译文/原文之间切换。
+- 开启方式：在目标站点的网页规则里把「漫画翻译」设为**开启**。此时页面右下角出现悬浮按钮，循环切换：**嵌字**（「漫」= 译文盖在原图上）→ **侧栏弹幕**（「幕」= 图片压窄、译文贴在两侧栏里，纵向对齐原文、逐条向下堆积不重叠、统一 14px 横排）→ **原图**（「原」= 关掉译文并还原图片尺寸）。切换只改显示方式，不会重新请求接口。
+- 两种显示方式的分工：**嵌字**贴近原版面、适合对照阅读；**侧栏弹幕**不遮挡画面（栏位只在图片左右两侧，译文按气泡左右分栏），适合只想快速看对话时用。
 - 工作方式：`IntersectionObserver` + `MutationObserver` 只处理进入视口的 `≥300px` 图片（懒加载、翻页原地换 `src`、SPA 都覆盖）；图片经 background 代理下载转 dataURL（跨域图片不受 CORS 限制；若站点有防盗链导致下载被拒，则退回同源 canvas 兜底，跨域图片在兜底路径上会失败并跳过该图），宽度超过 1500px 先压缩再发送；视觉模型返回严格 JSON（`box`/`src`/`dst`/`vertical`），带 markdown 围栏等脏输出会被容错解析；结果按图片 URL 缓存（最多 200 条，超出按更新时间淘汰），覆盖层用百分比定位 + `ResizeObserver` 重算字号，图片缩放时自动跟随，`vertical: true` 的气泡竖排渲染。
 - **站点规则同时作用于视觉链路**：漫画翻译的视觉提示词 = 固定基础指令 + 该站点规则的术语表（`aiTerms`，渲染成 `原文 → 译文`，无译文写「保留原文」）+ 该站点的补充提示词（`aiPrompt`，作为「本站点补充要求」），末尾重申「仍然只输出 JSON 数组」。也就是说预置的成人站点术语表/直译指令、GitHub 的编程术语表，对漫画译文同样生效。改了术语表或提示词后，旧图片缓存会自动失效（缓存条目带着提示词签名，签名不一致就重新识别）。
 - **思考模式对视觉请求同样生效**：视觉接口在设置页里选的思考模式/强度会按厂商协议注入（DeepSeek 的视觉槽默认 `disabled`，会真的带上 `thinking:{"type":"disabled"}`，避免白花 token；难页想让它推理时改成启用即可）。`QwenVL` 侧**不注入**思考字段（DashScope 的 VL 模型不保证接受该字段），需要的话用「自定义请求体」自己加。
@@ -263,6 +264,7 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
 - **真机实测记录（2026-10-09，wnacg）**：
   - 站点在 Cloudflare 后面：**直接打开相册内页会停在「请稍候…」挑战页**，先访问一次站点首页（几秒即过）再进内页正常。
   - 图片走 CDN + 一次性 `verify=` 令牌，令牌过期或缺会话 cookie 时 background 代理取图会 **403**；跨域图又没法用 canvas 兜底（画布被污染），最终表现为「该图直接跳过、没有覆盖层」。真机日志里能看到 `manga: image data unavailable`。
+  - 三种显示方式在真机（`photos-slide-aid-393050`，原图 2216×3111、容器 1388px）实测通过：嵌字态译文盖在原气泡上；弹幕态每张已译图左右各一条栏位、图片压窄到 832px、条目统一 14px 横排且按锚点堆积不重叠；「原图」态清空内联宽度、图片还原到 1388px 铺满容器。
 - 油猴版：`dashscope.aliyuncs.com` 与 `api.deepseek.com` 都已在 `config-overrides.js` 的 `@connect` 列表里；改其它视觉服务商时把它的域名加进该列表即可。
 
 ### 改动清单（相对上游）
@@ -277,6 +279,11 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
 | `3b382f6` | 测试：钉死 DeepSeek 视觉槽的默认端点与支持图片的模型名 |
 | `e1c2927` | 视觉链路吃站点术语表/提示词（带提示词签名失效缓存）+ 思考模式真正注入 |
 | `ce427df` | 视觉接口按设置页排序（`sortOrder`）选取 |
+| `81d6721` | 修复：视觉返回的气泡坐标按「发送尺寸」换算（原图过宽时会整体偏位） |
+| `3270544` | 侧栏弹幕显示方式（「漫 → 幕 → 原」三态循环，`attachMangaLayer` 可运行时换模式） |
+| `a9d83f2` | 修复：退出弹幕模式时还原图片尺寸（不再留下被压窄的图） |
+| `0f242e3` | 测试：无需真实 Key 的漫画链路 E2E harness（`tools/manga-e2e/`） |
+| `37e1757` | 工具：用 CDP 安装未打包扩展（不弹原生目录框） |
 
 > README/文档自身的改动（`ef3604d` 起）不单列，用 `git log -- README.md` 查。
 
@@ -285,7 +292,7 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
 | 文件 | 作用 |
 |---|---|
 | `src/manga/mangaManager.js` | 图片发现（IntersectionObserver + MutationObserver）、取图压缩、视觉接口调用、结果缓存、显隐开关与清理 |
-| `src/manga/overlay.js` | 覆盖层渲染（百分比定位、竖排、字号自适应）与右下角「漫」悬浮开关 |
+| `src/manga/overlay.js` | 两种显示方式（嵌字覆盖层 / 侧栏弹幕：百分比定位、竖排、字号自适应、左右分栏堆积）与右下角三态悬浮开关 |
 | `src/manga/prompt.js` | 视觉提示词拼装（基础指令 + 站点术语表/提示词）与模型返回的容错解析 |
 | `tools/manga-e2e/` | 漫画链路 E2E harness：`server.mjs`（桩视觉接口）+ `drive.mjs`（裸 CDP）+ `drive-ego.mjs`（走 ego Space API），不需要真实 API key |
 
