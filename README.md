@@ -271,7 +271,7 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
 
 ### 改动清单（相对上游）
 
-基线：上游 `dev` 分支 `a8c5a6f`（`package.json` 版本 2.1.0）。本机是浅克隆（`grafted`），与上游同步前先 `git fetch --unshallow origin`，再 `git rebase origin/dev`。
+基线：上游 `dev` 分支 `a8c5a6f`（`package.json` 版本 2.1.0）。本 fork 托管在 `origin`（`serena-sheng/kiss-translator`，私有），上游是 `upstream`（`fishjar/kiss-translator`）。与上游同步：`git fetch upstream && git rebase upstream/dev personal-fork`（先把 `personal-fork` 的改动 rebase 到最新上游，再 push）。
 
 | commit | 内容 |
 |---|---|
