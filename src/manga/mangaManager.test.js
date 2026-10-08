@@ -487,4 +487,63 @@ describe("MangaManager", () => {
 
     manager.stop();
   });
+
+  test("发送前被缩放的图：气泡按「发送尺寸」换算坐标，而不是页面原图尺寸", async () => {
+    // 真机复现过的坑：页面原图 2216×3111 会先被缩到 1500 宽再发给视觉模型，
+    // 模型返回的 box 属于那张 1500 宽的图。若继续用 naturalWidth 换算百分比，
+    // 整块译文会向坐上偏 1500/2216 ≈ 0.68 倍。
+    const originalImage = global.Image;
+    global.Image = class {
+      set src(value) {
+        this._src = value;
+        Promise.resolve().then(() => this.onload && this.onload());
+      }
+      get src() {
+        return this._src;
+      }
+    };
+    const createElement = document.createElement.bind(document);
+    jest.spyOn(document, "createElement").mockImplementation((tag) => {
+      const el = createElement(tag);
+      if (tag === "canvas") {
+        el.getContext = () => ({ drawImage: jest.fn() });
+        el.toDataURL = () => "data:image/jpeg;base64,SHRUNK";
+      }
+      return el;
+    });
+
+    callVisionApi.mockResolvedValue(
+      JSON.stringify([
+        {
+          box: [100, 200, 300, 500],
+          src: "原文",
+          dst: "译文",
+          vertical: false,
+        },
+      ])
+    );
+
+    const manager = createManager();
+    const img = createImage(IMAGE_URL, 2216, 3111); // 超过 MAX_SEND_WIDTH(1500)
+    manager.start();
+    await flush();
+    MockIntersectionObserver.instances[0].trigger(img);
+    await flush();
+
+    // 发给模型的是缩放后的图
+    expect(fetchData).toHaveBeenCalled();
+    expect(callVisionApi).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imageDataUrl: "data:image/jpeg;base64,SHRUNK",
+      })
+    );
+
+    // 气泡坐标 ÷ 1500（发送宽度），而不是 ÷ 2216（原图宽度）
+    const bubble = overlayOf().querySelector(".kiss-manga-bubble");
+    expect(bubble.style.left).toBe("6.6667%"); // 100 / 1500
+    expect(bubble.style.width).toBe("13.3333%"); // (300-100) / 1500
+
+    manager.stop();
+    global.Image = originalImage;
+  });
 });

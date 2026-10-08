@@ -12,9 +12,9 @@ const OVERLAY_CLASS = "kiss-manga-overlay";
 const BUBBLE_CLASS = "kiss-manga-bubble";
 const TOGGLE_CLASS = "kiss-manga-toggle";
 
-// 字号按气泡高度估算后的取值区间（px）
-const MIN_FONT_SIZE = 10;
-const MAX_FONT_SIZE = 18;
+// 字号按气泡面积与译文长度估算后的取值区间（px，渲染后的像素）
+const MIN_FONT_SIZE = 9;
+const MAX_FONT_SIZE = 44;
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -56,14 +56,19 @@ export const attachOverlay = (
     el.style.cssText = [
       "position:absolute",
       "box-sizing:border-box",
+      "display:flex",
+      "align-items:center",
+      "justify-content:center",
+      "text-align:center",
       `left:${((x1 / naturalWidth) * 100).toFixed(4)}%`,
       `top:${((y1 / naturalHeight) * 100).toFixed(4)}%`,
       `width:${(((x2 - x1) / naturalWidth) * 100).toFixed(4)}%`,
       `min-height:${(((y2 - y1) / naturalHeight) * 100).toFixed(4)}%`,
-      "background:rgba(255,252,240,0.92)",
+      // 不透明底：把原文盖住，避免中英叠在一起
+      "background:#fffdf5",
       "color:#111",
       "border-radius:6px",
-      "padding:2px 4px",
+      "padding:1px 2px",
       "line-height:1.3",
       "overflow-wrap:break-word",
       "overflow:hidden",
@@ -71,7 +76,7 @@ export const attachOverlay = (
       `writing-mode:${bubble.vertical ? "vertical-rl" : "horizontal-tb"}`,
     ].join(";");
     overlay.appendChild(el);
-    return { el, box: bubble.box };
+    return { el, box: bubble.box, text: String(bubble.dst || "") };
   });
 
   // 覆盖层紧跟在图片之后，避免打乱页面既有子元素顺序
@@ -87,10 +92,15 @@ export const attachOverlay = (
     overlay.style.height = `${height}px`;
 
     const renderedHeight = img.clientHeight || height;
-    items.forEach(({ el, box }) => {
-      const bubbleHeight = ((box[3] - box[1]) / naturalHeight) * renderedHeight;
+    const renderedWidth = img.clientWidth || width;
+    items.forEach(({ el, box, text }) => {
+      // 按「气泡面积 ÷ 译文长度」估字号：让译文大致填满气泡，而不是固定 18px 的小字
+      const boxWidth = ((box[2] - box[0]) / naturalWidth) * renderedWidth;
+      const boxHeight = ((box[3] - box[1]) / naturalHeight) * renderedHeight;
+      const area = Math.max(boxWidth * boxHeight, 1);
+      const chars = Math.max(text.length, 1);
       el.style.fontSize = `${clamp(
-        bubbleHeight / 6,
+        Math.sqrt(area / (chars * 1.15)),
         MIN_FONT_SIZE,
         MAX_FONT_SIZE
       ).toFixed(1)}px`;

@@ -259,6 +259,10 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
 - **思考模式对视觉请求同样生效**：视觉接口在设置页里选的思考模式/强度会按厂商协议注入（DeepSeek 的视觉槽默认 `disabled`，会真的带上 `thinking:{"type":"disabled"}`，避免白花 token；难页想让它推理时改成启用即可）。`QwenVL` 侧**不注入**思考字段（DashScope 的 VL 模型不保证接受该字段），需要的话用「自定义请求体」自己加。
 - 与 DeepSeek 视觉接口相关的官方限制（已按此实现，无需额外配置）：图片必须放在 `user` 消息里（`system`/`assistant` 带图返回 400）；支持 JPEG/PNG/GIF/WebP；内联单图 ≤32MiB、请求体 ≤48MiB；模型侧会把图片等比缩放到约 1300×1300 以内、每张 ≤1024 tokens，因此返回的气泡坐标换算成百分比后与页面显示尺寸无关。
 - 注入元素都带 `notranslate`，不会被自身的网页翻译器二次翻译；`stop()`（页面卸载/重载/规则变更）会移除覆盖层与开关并还原父容器定位样式。
+- **坐标按「发送尺寸」换算**：过宽的图会先缩到 1500 宽再发（控制 token），视觉模型返回的 `box` 属于这张**发送图**的像素空间，因此覆盖层的百分比与字号都用发送尺寸换算，而不是页面原图的 `naturalWidth`。用原图尺寸换算会让整块译文向坐上偏 `1500/原宽` 倍（2026-10-09 在 wnacg 真机、原图 2216×3111 上复现并修掉，`src/manga/mangaManager.test.js` 有对应回归测试）。
+- **真机实测记录（2026-10-09，wnacg）**：
+  - 站点在 Cloudflare 后面：**直接打开相册内页会停在「请稍候…」挑战页**，先访问一次站点首页（几秒即过）再进内页正常。
+  - 图片走 CDN + 一次性 `verify=` 令牌，令牌过期或缺会话 cookie 时 background 代理取图会 **403**；跨域图又没法用 canvas 兜底（画布被污染），最终表现为「该图直接跳过、没有覆盖层」。真机日志里能看到 `manga: image data unavailable`。
 - 油猴版：`dashscope.aliyuncs.com` 与 `api.deepseek.com` 都已在 `config-overrides.js` 的 `@connect` 列表里；改其它视觉服务商时把它的域名加进该列表即可。
 
 ### 改动清单（相对上游）

@@ -31,6 +31,19 @@ const CACHE_SAVE_DELAY = 1000; // 缓存落盘防抖
 const IMAGE_LOAD_TIMEOUT = 15000; // 等待图片解码的兜底超时
 const MANGA_CACHE_SALT = "KISS-Translator-MANGA"; // 提示词签名用的盐
 
+/**
+ * 发送给视觉模型的图片尺寸：与 #shrinkDataUrl 的缩放规则保持一致。
+ * 视觉模型返回的 box 坐标属于**这张图**的像素空间（不是页面原图的 naturalWidth），
+ * 覆盖层换算百分比必须用这里的尺寸，否则译文整块偏位。
+ */
+const sentImageSize = (naturalWidth, naturalHeight) =>
+  naturalWidth > MAX_SEND_WIDTH
+    ? {
+        width: MAX_SEND_WIDTH,
+        height: Math.round((naturalHeight / naturalWidth) * MAX_SEND_WIDTH),
+      }
+    : { width: naturalWidth, height: naturalHeight };
+
 export default class MangaManager {
   #rule = {};
   #setting = {};
@@ -237,29 +250,37 @@ export default class MangaManager {
     const size = await this.#ensureImageReady(img);
     if (this.#destroyed || !size) return;
 
-    // 缓存命中：直接渲染，不再请求接口（提示词签名不一致说明站点规则变了，需要重译）
+    // 发送尺寸（可能被缩过）——气泡坐标属于这个空间，缓存也要按它校验
+    const sent = sentImageSize(size.naturalWidth, size.naturalHeight);
+
+    // 缓存命中：直接渲染，不再请求接口（提示词签名变了、或发送尺寸变了都要重译）
     const cached = this.#cache[url];
-    if (cached?.bubbles && cached.promptSig === this.#promptSig) {
-      this.#render(img, url, cached.bubbles);
+    if (
+      cached?.bubbles &&
+      cached.promptSig === this.#promptSig &&
+      cached.sentWidth === sent.width &&
+      cached.sentHeight === sent.height
+    ) {
+      this.#render(img, url, cached.bubbles, sent.width, sent.height);
       return;
     }
 
-    const imageDataUrl = await this.#toDataUrl(img, url);
-    if (this.#destroyed || !imageDataUrl) {
+    const image = await this.#toDataUrl(img, url);
+    if (this.#destroyed || !image?.dataUrl) {
       kissLog("manga: image data unavailable", url);
       return;
     }
 
     const raw = await callVisionApi({
       apiSetting: this.#apiSetting,
-      imageDataUrl,
+      imageDataUrl: image.dataUrl,
       prompt: this.#prompt,
     });
     if (this.#destroyed) return;
 
     const bubbles = parseVisionResult(raw);
-    this.#storeCache(url, bubbles);
-    this.#render(img, url, bubbles);
+    this.#storeCache(url, bubbles, image.width, image.height);
+    this.#render(img, url, bubbles, image.width, image.height);
   }
 
   /** 等待图片解码完成并检查尺寸；尺寸过小或超时返回 null */
@@ -288,7 +309,12 @@ export default class MangaManager {
     return { naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight };
   }
 
-  /** 取图转 dataURL：跨域图片经 background 代理下载，失败时退回同源 canvas 兜底 */
+  /**
+   * 取图转 dataURL：跨域图片经 background 代理下载，失败时退回同源 canvas 兜底。
+   * @returns {Promise<{dataUrl: string, width: number, height: number}|null>}
+   *   width/height 是**实际发送给视觉模型的那张图**的像素尺寸。模型返回的 box 属于这个
+   *   坐标空间（发送前可能被缩过），覆盖层必须用它换算百分比，否则整块译文会偏位。
+   */
   async #toDataUrl(img, url) {
     try {
       const dataUrl = await fetchData(
@@ -297,7 +323,7 @@ export default class MangaManager {
         { expect: "base64" }
       );
       if (typeof dataUrl === "string" && dataUrl.startsWith("data:")) {
-        return this.#shrinkDataUrl(img, dataUrl);
+        return await this.#shrinkDataUrl(img, dataUrl);
       }
     } catch (err) {
       kissLog("manga: fetch image failed, try canvas fallback", err);
@@ -307,7 +333,10 @@ export default class MangaManager {
 
   /** 过宽的图片先缩放再发送，控制 token 消耗与模型输入限制 */
   async #shrinkDataUrl(img, dataUrl) {
-    if (img.naturalWidth <= MAX_SEND_WIDTH) return dataUrl;
+    const size = sentImageSize(img.naturalWidth, img.naturalHeight);
+    if (size.width === img.naturalWidth) {
+      return { dataUrl, ...size };
+    }
 
     const bitmap = await new Promise((resolve) => {
       const el = new Image();
@@ -315,17 +344,20 @@ export default class MangaManager {
       el.onerror = () => resolve(null);
       el.src = dataUrl;
     });
-    if (!bitmap) return dataUrl;
+    if (!bitmap)
+      return { dataUrl, width: img.naturalWidth, height: img.naturalHeight };
 
     const canvas = document.createElement("canvas");
-    canvas.width = MAX_SEND_WIDTH;
-    canvas.height = Math.round(
-      (bitmap.naturalHeight / bitmap.naturalWidth) * MAX_SEND_WIDTH
-    );
+    canvas.width = size.width;
+    canvas.height = size.height;
     canvas
       .getContext("2d")
       .drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+    return {
+      dataUrl: canvas.toDataURL("image/jpeg", JPEG_QUALITY),
+      width: canvas.width,
+      height: canvas.height,
+    };
   }
 
   /** 同源兜底：直接画页面上已加载的 img（跨域图片会污染 canvas，抛出即放弃） */
@@ -335,14 +367,18 @@ export default class MangaManager {
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
       canvas.getContext("2d").drawImage(img, 0, 0);
-      return canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+      return {
+        dataUrl: canvas.toDataURL("image/jpeg", JPEG_QUALITY),
+        width: canvas.width,
+        height: canvas.height,
+      };
     } catch (err) {
       kissLog("manga: canvas fallback failed (cross-origin image?)", err);
-      return "";
+      return null;
     }
   }
 
-  #render(img, url, bubbles) {
+  #render(img, url, bubbles, sentWidth, sentHeight) {
     if (this.#destroyed || !img.isConnected) return;
     if (!Array.isArray(bubbles) || bubbles.length === 0) return;
 
@@ -351,8 +387,9 @@ export default class MangaManager {
 
     const overlay = attachOverlay(img, {
       bubbles,
-      naturalWidth: img.naturalWidth,
-      naturalHeight: img.naturalHeight,
+      // 坐标来自发送给模型的那张图，必须用它换算百分比
+      naturalWidth: sentWidth,
+      naturalHeight: sentHeight,
     });
     if (!overlay) return;
 
@@ -395,9 +432,11 @@ export default class MangaManager {
     await this.#loadCache();
   }
 
-  #storeCache(url, bubbles) {
+  #storeCache(url, bubbles, sentWidth, sentHeight) {
     this.#cache[url] = {
       bubbles,
+      sentWidth,
+      sentHeight,
       updatedAt: Date.now(),
       promptSig: this.#promptSig,
     };
