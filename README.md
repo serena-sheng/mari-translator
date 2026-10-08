@@ -2,6 +2,15 @@
 
 [English](README.en.md) | [中文](README.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
+> **个人 fork（分支 `personal-fork`）**：基于上游 v2.1.0，新增两项定制能力，其余行为与上游一致。
+>
+> 1. **站点级 AI 提示词覆盖**：网页规则新增 `aiPrompt` 字段，追加到该站点 AI 翻译的系统提示词末尾（留空不生效）。
+>    内置三套站点规则与术语表：GitHub（编程/AI）、路透/彭博/BBC/经济学人等（政治金融）、成人站点（日英术语 + 露骨内容直译指令）。
+> 2. **漫画图片翻译**：新增 `QwenVL` 视觉接口类型（OpenAI 兼容协议，DashScope 兼容模式 / 豆包 Ark / Kimi 均可）。
+>    在规则中把「漫画翻译」设为开启后，页面右下角出现「漫」悬浮按钮：自动发现视口内的漫画大图，调用视觉模型取回气泡坐标与译文并覆盖渲染（支持竖排），点击按钮可切换原文/译文。
+>
+> 使用与手测见 [个人 fork 改动](#个人-fork-改动personal-fork)。
+
 一个简约、开源的 [双语对照翻译扩展 & 油猴脚本](https://github.com/fishjar/kiss-translator)。
 
 [kiss-translator.webm](https://github.com/fishjar/kiss-translator/assets/1157624/f7ba8a5c-e4a8-4d5a-823a-5c5c67a0a47f)
@@ -223,3 +232,43 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
 ## 赞赏
 
 ![appreciate](https://github.com/fishjar/kiss-translator/assets/1157624/ebaecabe-2934-4172-8085-af236f5ee399)
+
+## 个人 fork 改动（personal-fork）
+
+> 本节内容只在本 fork 中维护。除下列改动外，翻译链路、界面与上游 v2.1.0 完全一致。
+
+### 1. 站点级 AI 提示词覆盖（`aiPrompt`）
+
+- 网页规则新增字段 `aiPrompt`：非空时**追加**到该站点 AI 翻译的系统提示词末尾（聚合 `systemPrompt` 与非聚合 `nobatchPrompt` 两条链路各自生效，不覆盖原始提示词）。基础提示词为空时（如「简洁单句」预设）直接采用站点指令。
+- 设置页「网页规则 → 高级选项」可编辑；导入/导出、订阅规则同步均保留该字段。
+- 接口缓存的 prompt 签名已包含提示词文本，改 `aiPrompt` 会自动失效旧译文缓存。
+- 内置预置规则（可在设置页查看/改）：
+  - `github.com`：编程/AI 术语表（LLM、agent、RAG、MoE 等，无译文的条目保留原文）+ 技术文档翻译指令；
+  - 路透/美联/彭博/FT/经济学人/WSJ/NYT/CNBC/BBC/卫报/半岛/外交事务/Politico：财经政治术语表（加息、收益率曲线倒挂、鹰派/鸽派等）+ 新闻财经翻译指令；
+  - 成人站点（pornhub/xvideos/xnxx/xhamster/missav/e-hentai/exhentai/nhentai/hanime/jable）：日英成人术语表 + 忠实直译（含潜台词与语气）指令，并已把「漫画翻译」默认设为开启。
+
+### 2. 漫画图片翻译（`QwenVL`）
+
+- 新增接口类型 `QwenVL`：默认 `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` + `qwen-vl-max-latest`。
+  只要服务商是 OpenAI 兼容协议（DashScope 兼容模式、豆包 Ark、Kimi 等），改 `url` / `model` / `key` 即可切换；该接口默认关闭聚合与流式，漫画翻译走独立的单图请求链路（每次一张图、90s 兜底超时）。
+- 开启方式：在目标站点的网页规则里把「漫画翻译」设为**开启**。此时页面右下角出现「漫」悬浮按钮，点击可在译文/原文之间切换。
+- 工作方式：`IntersectionObserver` + `MutationObserver` 只处理进入视口的 `≥300px` 图片（懒加载、翻页换 `src`、SPA 都覆盖）；图片经 background 代理下载转 dataURL（跨域/防盗链不受 CORS 限制），宽度超过 1500px 先压缩再发送；视觉模型返回严格 JSON（`box`/`src`/`dst`/`vertical`），带 markdown 围栏等脏输出会被容错解析；结果按图片 URL 缓存（最多 200 条，超出按更新时间淘汰），覆盖层用百分比定位，图片缩放时自动跟随，`vertical: true` 的气泡竖排渲染。
+- 注入元素都带 `notranslate`，不会被自身的网页翻译器二次翻译；`stop()`（页面卸载/重载/规则变更）会移除覆盖层与开关并还原父容器定位样式。
+- 油猴版：`@connect dashscope.aliyuncs.com` 已存在；若改用豆包/Kimi，请把对应域名加进 `config-overrides.js` 的 `@connect` 列表。
+
+### 开发命令（本 fork 实测）
+
+```sh
+pnpm install
+CI=true pnpm test        # 注意：`pnpm test -- --watchAll=false` 会把 `--` 原样传给 jest，参数解析错乱
+pnpm build:chrome        # 产物在 build/chrome/，chrome://extensions 开发者模式加载
+pnpm format              # prettier
+```
+
+### 手测清单
+
+1. `chrome://extensions` 加载 `build/chrome/`，设置页「接口」里启用 `QwenVL` 并填 API Key（可改 url/model）。**改动网页规则后需刷新目标页面**：设置页的规则变更不会热更新已打开页面的内容脚本（`TranslatorManager` 只监听设置键，规则键没有监听器）。
+2. GitHub 仓库 README：开启双语翻译，检查 `agent→智能体`、`transformer` 保留原文；术语高亮样式正常。
+3. reuters.com 文章：`rate hike→加息`、`hawkish→鹰派`。
+4. 任一成人站点：术语与语气（央求/羞耻等）是否落地，标题/标签用中文社区惯用说法。
+5. e-hentai / nhentai 阅读页：右下角出现「漫」按钮 → 点击后气泡被中文覆盖、竖排正确、翻页/滚动后新图自动处理 → 再点按钮切回原文。

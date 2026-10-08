@@ -11,6 +11,7 @@ import {
   STOKEY_BDAUTH,
   STOKEY_RULESCACHE_PREFIX,
   STOKEY_DISABLED_SUB_RULES,
+  STOKEY_MANGA_CACHE,
   DEFAULT_SETTING,
   DEFAULT_RULES,
   DEFAULT_SYNC,
@@ -671,6 +672,10 @@ export const getFab = () => getObj(STOKEY_FAB);
 export const getFabWithDefault = async () => (await getFab()) || {};
 export const setFab = (obj) => setObj(STOKEY_FAB, obj);
 export const putFab = (obj) => putObj(STOKEY_FAB, obj);
+
+// --- 漫画图片翻译结果缓存存取 (按图片 URL 记录气泡译文) ---
+export const getMangaCache = () => getObj(STOKEY_MANGA_CACHE);
+export const setMangaCache = (obj) => setObj(STOKEY_MANGA_CACHE, obj);
 
 // --- 交互翻译框 (TranBox UI) 位置与大小存取 ---
 export const getTranBox = () => getObj(STOKEY_TRANBOX);

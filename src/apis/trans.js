@@ -15,6 +15,7 @@ import {
   OPT_TRANS_XIAOMIMIMO,
   OPT_TRANS_ALIYUNBAILIAN,
   OPT_TRANS_QWENMT,
+  OPT_TRANS_QWENVL,
   OPT_TRANS_CEREBRAS,
   OPT_TRANS_ZAI,
   OPT_TRANS_EPHONEAI,
@@ -1661,6 +1662,7 @@ const genReqFuncs = {
   [OPT_TRANS_XIAOMIMIMO]: genOpenAI,
   [OPT_TRANS_ALIYUNBAILIAN]: genOpenAI,
   [OPT_TRANS_QWENMT]: genQwenMt,
+  [OPT_TRANS_QWENVL]: genOpenAI,
   [OPT_TRANS_CEREBRAS]: genOpenAI,
   [OPT_TRANS_ZAI]: genOpenAI,
   [OPT_TRANS_DEEPLX]: genDeeplX,
@@ -2017,6 +2019,7 @@ export const parseTransRes = async (
     case OPT_TRANS_SILICONFLOW:
     case OPT_TRANS_XIAOMIMIMO:
     case OPT_TRANS_ALIYUNBAILIAN:
+    case OPT_TRANS_QWENVL:
     case OPT_TRANS_CEREBRAS:
     case OPT_TRANS_ZAI:
     case OPT_TRANS_GEMINI_2:
@@ -2126,6 +2129,7 @@ function parseDictRes(res, apiType) {
     case OPT_TRANS_SILICONFLOW:
     case OPT_TRANS_XIAOMIMIMO:
     case OPT_TRANS_ALIYUNBAILIAN:
+    case OPT_TRANS_QWENVL:
     case OPT_TRANS_CEREBRAS:
     case OPT_TRANS_ZAI:
     case OPT_TRANS_GEMINI_2:
@@ -2747,6 +2751,7 @@ export const handleSubtitle = async ({
     case OPT_TRANS_SILICONFLOW:
     case OPT_TRANS_XIAOMIMIMO:
     case OPT_TRANS_ALIYUNBAILIAN:
+    case OPT_TRANS_QWENVL:
     case OPT_TRANS_CEREBRAS:
     case OPT_TRANS_ZAI:
     case OPT_TRANS_GEMINI_2:
@@ -2966,6 +2971,7 @@ export const handleSummarize = async ({
     case OPT_TRANS_SILICONFLOW:
     case OPT_TRANS_XIAOMIMIMO:
     case OPT_TRANS_ALIYUNBAILIAN:
+    case OPT_TRANS_QWENVL:
     case OPT_TRANS_CEREBRAS:
     case OPT_TRANS_ZAI:
     case OPT_TRANS_GEMINI_2:
@@ -2989,4 +2995,71 @@ export const handleSummarize = async ({
     default:
       return "";
   }
+};
+
+// 视觉模型单图请求的兜底超时（秒）；调用方配置了 httpTimeout 时优先用配置值
+const VISION_API_HTTP_TIMEOUT = 90;
+
+/**
+ * 视觉模型单图翻译请求（漫画图片翻译专用）。
+ *
+ * 漫画链路刻意不复用 apiTranslate 的批量/缓存管线：一次请求只带一张图片，
+ * 由视觉模型直接返回气泡坐标与译文。协议为 OpenAI 兼容的
+ * `chat/completions`，因此 DashScope 兼容模式、豆包 Ark、Kimi 等服务商
+ * 只需在接口配置里改 url / model / key 即可切换。
+ *
+ * @param {Object} params
+ * @param {Object} params.apiSetting 视觉接口配置（需含 url/key/model）
+ * @param {string} params.imageDataUrl 图片的 base64 dataURL
+ * @param {string} params.prompt 系统提示词
+ * @param {AbortSignal} [params.signal] 取消信号
+ * @returns {Promise<string>} 模型返回的原始文本（预期为 JSON 数组字符串）
+ */
+export const callVisionApi = async ({
+  apiSetting = {},
+  imageDataUrl,
+  prompt,
+  signal,
+}) => {
+  const { url, key, model, httpTimeout } = apiSetting;
+  if (!url?.trim()) {
+    throw new Error("Vision API url is empty");
+  }
+  if (!imageDataUrl) {
+    throw new Error("Vision API image is empty");
+  }
+
+  const body = {
+    model,
+    messages: [
+      { role: "system", content: prompt },
+      {
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: imageDataUrl } },
+          { type: "text", text: "请处理这张图片。" },
+        ],
+      },
+    ],
+    temperature: 0.1,
+    max_tokens: 4096,
+  };
+
+  // 单图识别耗时远高于文本翻译（30s 默认值经常不够），此处给视觉请求更宽松的超时
+  const res = await fetchData(
+    url,
+    {
+      method: "POST",
+      headers: {
+        "Content-type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify(body),
+      signal,
+    },
+    { httpTimeout: httpTimeout || VISION_API_HTTP_TIMEOUT }
+  );
+
+  if (typeof res === "string") return res;
+  return res?.choices?.[0]?.message?.content || "";
 };

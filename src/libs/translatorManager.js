@@ -22,6 +22,7 @@ import {
 import { touchTapListener } from "./touch";
 import { PopupManager } from "./popupManager";
 import { FabManager } from "./fabManager";
+import MangaManager from "../manga/mangaManager";
 import { RuleEditorManager } from "./ruleEditorManager";
 import {
   OPT_SHORTCUT_TRANSLATE,
@@ -106,6 +107,7 @@ export default class TranslatorManager {
   _popupManager = null;
   _fabManager = null;
   _ruleEditorManager = null;
+  _mangaManager = null;
 
   /**
    * 保存启动参数并绑定全局 handler。
@@ -309,6 +311,12 @@ export default class TranslatorManager {
         fabConfig: this.#cloneConfig(this.#fabConfig),
         getSelectionEnabled: () => Boolean(this._transboxManager?.isEnabled()),
       });
+      // 漫画翻译只在规则显式开启时才有页面副作用（挂覆盖层与悬浮开关）
+      this._mangaManager = new MangaManager({
+        rule: this.#cloneConfig(this.#rule),
+        setting: this.#cloneConfig(this.#setting),
+      });
+      this._mangaManager.start();
     }
   }
 
@@ -325,6 +333,7 @@ export default class TranslatorManager {
     this._ruleEditorManager = null;
     this._popupManager?.destroy();
     this._fabManager?.destroy();
+    this._mangaManager?.stop();
     this._transboxManager?.disable();
     this._inputTranslator?.disable();
     this._translator?.stop();
@@ -334,6 +343,7 @@ export default class TranslatorManager {
     this._inputTranslator = null;
     this._popupManager = null;
     this._fabManager = null;
+    this._mangaManager = null;
   }
 
   /**

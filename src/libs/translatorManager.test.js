@@ -16,6 +16,7 @@ const mockTransboxArgs = [];
 const mockInputTranslatorInstances = [];
 const mockPopupInstances = [];
 const mockFabInstances = [];
+const mockMangaInstances = [];
 const mockPopupDocumentIdentity = jest.fn();
 const activeManagers = [];
 
@@ -172,6 +173,18 @@ jest.mock("./fabManager", () => ({
   }),
 }));
 
+jest.mock("../manga/mangaManager", () => ({
+  __esModule: true,
+  default: jest.fn().mockImplementation(() => {
+    const instance = {
+      start: jest.fn(),
+      stop: jest.fn(),
+    };
+    mockMangaInstances.push(instance);
+    return instance;
+  }),
+}));
+
 jest.mock("./shortcut", () => ({
   shortcutRegister: jest.fn(() => jest.fn()),
 }));
@@ -197,6 +210,7 @@ const { TransboxManager } = require("./tranbox");
 const { InputTranslator } = require("./inputTranslate");
 const { PopupManager } = require("./popupManager");
 const { FabManager } = require("./fabManager");
+const MangaManager = require("../manga/mangaManager").default;
 const { sendIframeMsg } = require("./iframe");
 const TranslatorManager = require("./translatorManager").default;
 
@@ -282,6 +296,15 @@ function setupMockConstructors() {
       destroy: jest.fn(),
     };
     mockFabInstances.push(instance);
+    return instance;
+  });
+
+  MangaManager.mockImplementation(() => {
+    const instance = {
+      start: jest.fn(),
+      stop: jest.fn(),
+    };
+    mockMangaInstances.push(instance);
     return instance;
   });
 }
@@ -376,6 +399,7 @@ describe("TranslatorManager SPA lifecycle", () => {
     mockInputTranslatorInstances.length = 0;
     mockPopupInstances.length = 0;
     mockFabInstances.length = 0;
+    mockMangaInstances.length = 0;
     activeManagers.length = 0;
     setupMockConstructors();
   });
@@ -399,6 +423,8 @@ describe("TranslatorManager SPA lifecycle", () => {
     expect(mockTranslatorInstances[0].stop).toHaveBeenCalledTimes(1);
     expect(mockPopupInstances[0].destroy).toHaveBeenCalledTimes(1);
     expect(mockFabInstances[0].destroy).toHaveBeenCalledTimes(1);
+    expect(mockMangaInstances[0].start).toHaveBeenCalledTimes(1);
+    expect(mockMangaInstances[0].stop).toHaveBeenCalledTimes(1);
     expect(browser.runtime.onMessage.addListener).toHaveBeenCalledTimes(1);
   });
 

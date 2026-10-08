@@ -10,7 +10,9 @@ import { blobToBase64 } from "./utils";
  * 将 Response 解析为调用方期望的数据结构。
  *
  * @param {Response} res 原生 Fetch Response 实例。
- * @param {"json"|"text"|"blob"|"audio"|null} [expect=null] 调用方显式期望的响应类型。
+ * @param {"json"|"text"|"blob"|"base64"|"audio"|null} [expect=null] 调用方显式期望的响应类型。
+ *   `base64` 用于二进制资源（如图片）跨上下文传输：Blob 无法通过消息通道序列化，
+ *   转成 dataURL 字符串后才能从 background 代理回传给 content script。
  * @returns {Promise<*>} 解析后的响应数据；未指定 expect 时会优先尝试 JSON，失败则返回文本。
  * @throws {Error} 当响应不存在、HTTP 状态失败，或完整响应通道误收到 SSE 流时抛出明确错误。
  */
@@ -42,6 +44,7 @@ export const parseResponse = async (res, expect = null) => {
 
   const contentType = res.headers.get("Content-Type") || "";
   if (expect === "blob") return res.blob();
+  if (expect === "base64") return blobToBase64(await res.blob());
   if (expect === "text") return res.text();
   if (expect === "json") return res.json();
 
