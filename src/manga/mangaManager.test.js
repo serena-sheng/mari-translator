@@ -864,8 +864,9 @@ describe("MangaManager", () => {
     callVisionApi.mockResolvedValue(
       JSON.stringify([
         {
-          // 归一化按「发送尺寸」（1500×2106）换算，才能得到 100/200/300/500 这些像素
-          box: norm([100, 200, 300, 500], 1500, 2106),
+          // 归一化按「发送尺寸」换算。2216×3111 超宽 → 发送 1300×1825（MAX_SEND_WIDTH），
+          // 归一化基准要用发送尺寸，才能得到 100/200/300/500 这些像素
+          box: norm([100, 200, 300, 500], 1300, 1825),
           src: "原文",
           dst: "译文",
           vertical: false,
@@ -888,10 +889,10 @@ describe("MangaManager", () => {
       })
     );
 
-    // 气泡坐标 ÷ 1500（发送宽度），而不是 ÷ 2216（原图宽度）
+    // 气泡坐标 ÷ 1300（发送宽度），而不是 ÷ 2216（原图宽度）
     const bubble = overlayOf().querySelector(".kiss-manga-bubble");
-    expect(bubble.style.left).toBe("6.6667%"); // 100 / 1500
-    expect(bubble.style.width).toBe("13.3333%"); // (300-100) / 1500
+    expect(bubble.style.left).toBe("7.6923%"); // 100 / 1300
+    expect(bubble.style.width).toBe("15.3846%"); // (300-100) / 1300
 
     manager.stop();
     global.Image = originalImage;

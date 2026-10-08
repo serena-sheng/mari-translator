@@ -3055,7 +3055,9 @@ export const callVisionApi = async ({
       },
     ],
     temperature: 0.1,
-    max_tokens: 4096,
+    // 正常返回是几百 token 的 JSON 数组，4096 的兜底只会在模型失控时拖长尾延迟；
+    // 需要更大输出可在接口配置里用「自定义请求体」覆盖
+    max_tokens: 2048,
   };
 
   // 与文本翻译共用同一套思考参数管线：视觉槽在接口配置里选的思考模式/强度会真正生效

@@ -34,11 +34,13 @@ import {
 } from "./overlay";
 
 const MIN_IMAGE_EDGE = 300; // 小于该边长的图片视为图标/装饰图，跳过
-const MAX_SEND_WIDTH = 1500; // 发送前压缩到的最大宽度，控制 token 成本
+// 发送前压缩到的最大宽度：DeepSeek 视觉侧内部会把长边缩到约 1300，再送大只是白烧
+// 上传带宽与 base64 编解码（token 按模型缩放后计），1300 已等于其内部上限
+const MAX_SEND_WIDTH = 1300;
 const JPEG_QUALITY = 0.85;
 const MAX_CACHE_ENTRIES = 200; // 缓存条数上限，超出按更新时间淘汰最旧
 const MAX_CONCURRENT = 2; // 同时进行的视觉请求数量
-const ROOT_MARGIN = "300px"; // 视口预取范围
+const ROOT_MARGIN = "150px"; // 视口预取范围：预翻译太近会为用户看不到的图白花钱
 const CACHE_SAVE_DELAY = 1000; // 缓存落盘防抖
 const IMAGE_LOAD_TIMEOUT = 15000; // 等待图片解码的兜底超时
 const MANGA_CACHE_SALT = "KISS-Translator-MANGA"; // 提示词签名用的盐
@@ -66,6 +68,8 @@ export default class MangaManager {
   #toggle = null;
   #states = new Map(); // img -> { url, layer }
   #pendingRoots = new Set(); // 待扫描的新增节点 / 换了 src 的图片
+  #pendingSync = new Set(); // 等下一帧统一 sync 的图（ResizeObserver 去抖）
+  #syncRaf = null;
   #cache = {};
   #cacheReady = Promise.resolve();
   #prompt = MANGA_VISION_PROMPT; // 站点术语表/提示词拼装后的视觉提示词
@@ -156,6 +160,11 @@ export default class MangaManager {
       clearTimeout(this.#mutationsTimer);
       this.#mutationsTimer = null;
     }
+    if (this.#syncRaf != null) {
+      cancelAnimationFrame(this.#syncRaf);
+      this.#syncRaf = null;
+    }
+    this.#pendingSync.clear();
     this.#flushCache();
   }
 
@@ -447,6 +456,10 @@ export default class MangaManager {
     canvas
       .getContext("2d")
       .drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    // 主动释放全尺寸解码图的引用，别让几 MB 的原图解码结果活到 GC 想起来
+    bitmap.onload = null;
+    bitmap.onerror = null;
+    bitmap.src = "";
     return {
       dataUrl: canvas.toDataURL("image/jpeg", JPEG_QUALITY),
       width: canvas.width,
@@ -579,9 +592,22 @@ export default class MangaManager {
 
   #ensureResizeObserver() {
     if (typeof ResizeObserver === "undefined") return;
+    // 窗口缩放会连续触发每张图的 sync，而弹幕 sync 边写 top 边读 offsetHeight，
+    // 逐张立即跑是标准的布局抖动。攒到每帧一次统一跑。
     this.#resizeObserver = new ResizeObserver((entries) => {
-      entries.forEach((entry) => {
-        this.#states.get(entry.target)?.layer?.sync?.();
+      entries.forEach((entry) => this.#pendingSync.add(entry.target));
+      if (this.#syncRaf != null) return;
+      this.#syncRaf = requestAnimationFrame(() => {
+        this.#syncRaf = null;
+        if (this.#destroyed) {
+          this.#pendingSync.clear();
+          return;
+        }
+        const targets = [...this.#pendingSync];
+        this.#pendingSync.clear();
+        targets.forEach((target) => {
+          this.#states.get(target)?.layer?.sync?.();
+        });
       });
     });
   }

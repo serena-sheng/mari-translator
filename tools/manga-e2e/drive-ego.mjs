@@ -312,19 +312,42 @@ async function main() {
     `${dom.bubbles[0]?.left} ${dom.bubbles[0]?.width}`
   );
 
+  // 悬浮开关是「漫 → 幕 → 原」三态循环（不是简单的显隐两态）
   const toggleState = await page.evaluate(() => {
     const btn = document.querySelector(".kiss-manga-toggle");
-    const overlay = document.querySelector(".kiss-manga-overlay");
-    btn.click();
-    const hidden = overlay.style.display;
-    btn.click();
-    return { hidden, shown: overlay.style.display };
+    const seq = [];
+    for (let i = 0; i < 3; i++) {
+      btn.click();
+      seq.push({
+        label: btn.textContent,
+        overlay:
+          document.querySelector(".kiss-manga-overlay")?.style.display ??
+          "(无覆盖层)",
+        gutterDisplays: [
+          ...document.querySelectorAll(".kiss-manga-gutter"),
+        ].map((g) => g.style.display || ""),
+      });
+    }
+    return seq;
   });
-  check("点开关隐藏覆盖层", toggleState.hidden === "none", toggleState.hidden);
   check(
-    "再点恢复显示",
-    toggleState.shown === "",
-    `display="${toggleState.shown}"`
+    "点开关切到侧栏弹幕（覆盖层撤下、左右栏出现）",
+    toggleState[0].label === "幕" &&
+      toggleState[0].overlay === "(无覆盖层)" &&
+      toggleState[0].gutterDisplays.length === 2,
+    JSON.stringify(toggleState[0])
+  );
+  check(
+    "再点切回原图（栏位整体隐藏）",
+    toggleState[1].label === "原" &&
+      toggleState[1].gutterDisplays.length > 0 &&
+      toggleState[1].gutterDisplays.every((d) => d === "none"),
+    JSON.stringify(toggleState[1])
+  );
+  check(
+    "再点恢复嵌字（覆盖层重新显示）",
+    toggleState[2].label === "漫" && toggleState[2].overlay === "",
+    JSON.stringify(toggleState[2])
   );
 
   // 给人看的证据：留一张渲染后的截图

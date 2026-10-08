@@ -81,7 +81,7 @@ test("Qwen-VL 与 DeepSeek 视觉接口都是 OpenAI 兼容的 image_url 请求"
       type: "image_url",
       image_url: { url: IMAGE },
     });
-    expect(body.max_tokens).toBe(4096);
+    expect(body.max_tokens).toBe(2048);
     expect(body.temperature).toBe(0.1);
   }
 });
@@ -120,7 +120,7 @@ test("自定义请求体会合并进视觉请求（可覆盖思考等参数）",
   const body = JSON.parse(fetchData.mock.calls[0][1].body);
   expect(body.thinking).toEqual({ type: "disabled" });
   // 未覆盖的字段保持默认
-  expect(body.max_tokens).toBe(4096);
+  expect(body.max_tokens).toBe(2048);
 });
 
 test("视觉接口自带 90s 超时，配置了就按配置，缺省时用兜底值", async () => {
