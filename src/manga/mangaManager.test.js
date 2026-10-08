@@ -331,13 +331,16 @@ describe("MangaManager", () => {
     expect(
       document.querySelectorAll(".kiss-manga-danmaku").length
     ).toBeGreaterThan(0);
+    // 弹幕模式要把图片压窄（腾出两侧栏位）
+    expect(img.style.width).not.toBe("");
 
-    // 第三次：回到原图（栏位整体隐藏）
+    // 第三次：回到原图（栏位整体隐藏，图片尺寸必须还原）
     click();
     expect(toggle.textContent).toBe("原");
     document.querySelectorAll(".kiss-manga-gutter").forEach((el) => {
       expect(el.style.display).toBe("none");
     });
+    expect(img.style.width).toBe("");
 
     // 第四次：回到嵌字
     click();

@@ -148,7 +148,7 @@ const createGutters = (
   );
   const imageWidth = Math.max(parentWidth - gutterWidth * 2, MIN_IMAGE_WIDTH);
 
-  // 记住图片原本的内联样式，退出时还原（页面自己的 CSS 不动）
+  // 记住图片原本的内联样式，退出/隐藏时还原（页面自己的 CSS 不动）
   const originalStyle = {
     width: img.style.width,
     maxWidth: img.style.maxWidth,
@@ -157,11 +157,29 @@ const createGutters = (
     marginRight: img.style.marginRight,
   };
   // 关键：不只缩宽度，还要左右各留出栏宽的外边距，否则图片（常见左对齐）会和侧栏重叠
-  img.style.width = `${imageWidth}px`;
-  img.style.maxWidth = "none";
-  img.style.height = "auto";
-  img.style.marginLeft = `${gutterWidth}px`;
-  img.style.marginRight = `${gutterWidth}px`;
+  const applyNarrow = () => {
+    img.style.width = `${imageWidth}px`;
+    img.style.maxWidth = "none";
+    img.style.height = "auto";
+    img.style.marginLeft = `${gutterWidth}px`;
+    img.style.marginRight = `${gutterWidth}px`;
+  };
+  // 把图片放回原始样式（「原图」模式与卸载时都要用，否则会留下被压窄的图）
+  const restoreImage = () => {
+    if (originalStyle.width) img.style.width = originalStyle.width;
+    else img.style.removeProperty("width");
+    if (originalStyle.maxWidth) img.style.maxWidth = originalStyle.maxWidth;
+    else img.style.removeProperty("max-width");
+    if (originalStyle.height) img.style.height = originalStyle.height;
+    else img.style.removeProperty("height");
+    if (originalStyle.marginLeft)
+      img.style.marginLeft = originalStyle.marginLeft;
+    else img.style.removeProperty("margin-left");
+    if (originalStyle.marginRight)
+      img.style.marginRight = originalStyle.marginRight;
+    else img.style.removeProperty("margin-right");
+  };
+  applyNarrow();
 
   const gutters = {
     left: document.createElement("div"),
@@ -274,21 +292,18 @@ const createGutters = (
       Object.values(gutters).forEach((el) => {
         el.style.display = visible ? "" : "none";
       });
+      // 弹幕模式靠「压窄图片 + 两侧腾栏」实现，隐藏时必须把图片放回原尺寸，
+      // 否则「原图」模式会留下一张被压窄的图（两侧还各空着一条栏位）
+      if (visible) {
+        applyNarrow();
+        sync();
+      } else {
+        restoreImage();
+      }
     },
     destroy() {
       Object.values(gutters).forEach((el) => el.remove());
-      if (originalStyle.width) img.style.width = originalStyle.width;
-      else img.style.removeProperty("width");
-      if (originalStyle.maxWidth) img.style.maxWidth = originalStyle.maxWidth;
-      else img.style.removeProperty("max-width");
-      if (originalStyle.height) img.style.height = originalStyle.height;
-      else img.style.removeProperty("height");
-      if (originalStyle.marginLeft)
-        img.style.marginLeft = originalStyle.marginLeft;
-      else img.style.removeProperty("margin-left");
-      if (originalStyle.marginRight)
-        img.style.marginRight = originalStyle.marginRight;
-      else img.style.removeProperty("margin-right");
+      restoreImage();
     },
   };
 };
