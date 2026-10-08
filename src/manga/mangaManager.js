@@ -365,6 +365,7 @@ export default class MangaManager {
     // 就落到下一个保底（例如本地 MLX/Ollama），直到有一个给出可用译文。
     let bubbles = null;
     let coordsRejected = false;
+    let sawEmptySuccess = false; // 有接口正常返回、只是这张图确实没文字
     for (const apiSetting of this.#apiSettings) {
       let raw = "";
       try {
@@ -381,7 +382,7 @@ export default class MangaManager {
 
       // 不带 bound 先解析一次，用来区分两种「空」：
       //   模型返回了条目但坐标不可信 → 换下一个接口试试；都不可信再记 coordsRejected；
-      //   模型本来就没返回条目（这张图没文字）→ 当作空结果。
+      //   模型本来就没返回条目（这张图没文字）→ 记成正常空结果。
       const rawBubbles = parseVisionResult(raw);
       const valid = parseVisionResult(raw, {
         width: image.width,
@@ -393,11 +394,12 @@ export default class MangaManager {
         break;
       }
       if (rawBubbles.length > 0) coordsRejected = true;
+      else sawEmptySuccess = true;
     }
 
     if (!bubbles) {
-      // 所有接口都失败，或所有有结果的接口坐标都不可信：记下来避免反复重试同一个坏结果
       if (coordsRejected) {
+        // 每个有结果的接口坐标都不可信：记下来，避免反复重试同一个坏结果
         kissLog(
           "manga: vision boxes out of range on all apis, skip rendering",
           url
@@ -405,7 +407,11 @@ export default class MangaManager {
         this.#storeCache(url, [], image.width, image.height, {
           coordsRejected: true,
         });
+      } else if (sawEmptySuccess) {
+        // 有接口明确说这张图没文字 → 缓存空结果，免得每次进视口都重跑整条链路
+        this.#storeCache(url, [], image.width, image.height);
       }
+      // 全部接口都调用失败（欠费/网络）→ 不缓存，下次进视口再试
       return;
     }
     this.#storeCache(url, bubbles, image.width, image.height);

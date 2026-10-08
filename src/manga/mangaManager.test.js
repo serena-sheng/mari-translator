@@ -552,6 +552,40 @@ describe("MangaManager", () => {
     manager.stop();
   });
 
+  test("所有接口都返回空数组时缓存空结果（不反复重跑）", async () => {
+    callVisionApi.mockResolvedValue("[]");
+
+    const manager = createManager();
+    const img = createImage();
+    manager.start();
+    await flush();
+    MockIntersectionObserver.instances[0].trigger(img);
+    await flush();
+
+    const stored = setMangaCache.mock.calls.at(-1)?.[0];
+    expect(stored?.[IMAGE_URL]?.bubbles).toEqual([]);
+    expect(stored?.[IMAGE_URL]?.coordsRejected).toBeUndefined();
+    expect(document.querySelectorAll(".kiss-manga-bubble")).toHaveLength(0);
+
+    manager.stop();
+  });
+
+  test("所有接口都调用失败时不写缓存（下次进视口再试）", async () => {
+    callVisionApi.mockRejectedValue(new Error("insufficient balance"));
+
+    const manager = createManager();
+    const img = createImage();
+    manager.start();
+    await flush();
+    MockIntersectionObserver.instances[0].trigger(img);
+    await flush();
+
+    expect(setMangaCache).not.toHaveBeenCalled();
+    expect(document.querySelectorAll(".kiss-manga-bubble")).toHaveLength(0);
+
+    manager.stop();
+  });
+
   test("主接口坐标全坏时也落到下一个接口；全都坏才记 coordsRejected", async () => {
     const grid = JSON.stringify(
       Array.from({ length: 32 }, (_, i) => ({
@@ -561,18 +595,16 @@ describe("MangaManager", () => {
         vertical: false,
       }))
     );
-    callVisionApi
-      .mockResolvedValueOnce(grid)
-      .mockResolvedValueOnce(
-        JSON.stringify([
-          {
-            box: norm([10, 10, 300, 120]),
-            src: "",
-            dst: "本地译文",
-            vertical: false,
-          },
-        ])
-      );
+    callVisionApi.mockResolvedValueOnce(grid).mockResolvedValueOnce(
+      JSON.stringify([
+        {
+          box: norm([10, 10, 300, 120]),
+          src: "",
+          dst: "本地译文",
+          vertical: false,
+        },
+      ])
+    );
 
     const manager = createManager(null, {
       transApis: [
