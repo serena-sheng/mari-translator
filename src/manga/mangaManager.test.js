@@ -14,16 +14,32 @@ jest.mock("../libs/fetch", () => ({ fetchData: jest.fn() }));
 jest.mock("../libs/storage", () => ({
   getMangaCache: jest.fn(),
   setMangaCache: jest.fn(),
+  getMangaMode: jest.fn(),
+  setMangaMode: jest.fn(),
 }));
 jest.mock("../apis/trans", () => ({ callVisionApi: jest.fn() }));
 
 const { fetchData } = require("../libs/fetch");
-const { getMangaCache, setMangaCache } = require("../libs/storage");
+const {
+  getMangaCache,
+  setMangaCache,
+  getMangaMode,
+  setMangaMode,
+} = require("../libs/storage");
 const { callVisionApi } = require("../apis/trans");
 const MangaManager = require("./mangaManager").default;
 
 const IMAGE_URL = "https://cdn.example.com/pages/01.jpg";
 const DATA_URL = "data:image/jpeg;base64,AAAA";
+
+// 视觉接口现在返回**归一化**坐标。测试里继续按「发送图像素」书写，用这个换算——
+// 像素 ÷ 图宽/图高。默认基准是 createImage() 的 800×1200。
+const norm = (box, w = 800, h = 1200) => [
+  box[0] / w,
+  box[1] / h,
+  box[2] / w,
+  box[3] / h,
+];
 
 class MockIntersectionObserver {
   static instances = [];
@@ -120,11 +136,13 @@ describe("MangaManager", () => {
     document.body.innerHTML = "";
     getMangaCache.mockResolvedValue(null);
     setMangaCache.mockResolvedValue(undefined);
+    getMangaMode.mockResolvedValue(null);
+    setMangaMode.mockResolvedValue(undefined);
     fetchData.mockResolvedValue(DATA_URL);
     callVisionApi.mockResolvedValue(
       JSON.stringify([
         {
-          box: [100, 200, 300, 500],
+          box: norm([100, 200, 300, 500]),
           src: "こんにちは",
           dst: "你好",
           vertical: true,
@@ -351,6 +369,178 @@ describe("MangaManager", () => {
     manager.stop();
   });
 
+  test("切换显示方式后写入存储，供后续加载的漫画页面沿用", async () => {
+    const manager = createManager();
+    const img = createImage();
+    manager.start();
+    await flush();
+    MockIntersectionObserver.instances[0].trigger(img);
+    await flush();
+
+    const toggle = document.querySelector(".kiss-manga-toggle");
+    const click = () =>
+      toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    click(); // 幕
+    await flush();
+    expect(setMangaMode).toHaveBeenLastCalledWith("danmaku");
+    click(); // 原
+    await flush();
+    expect(setMangaMode).toHaveBeenLastCalledWith("off");
+    click(); // 漫
+    await flush();
+    expect(setMangaMode).toHaveBeenLastCalledWith("overlay");
+
+    manager.stop();
+  });
+
+  test("新页面（重新构造管理器）沿用已保存的弹幕显示方式", async () => {
+    getMangaMode.mockResolvedValue("danmaku");
+    const manager = createManager();
+    const img = createImage();
+    manager.start();
+    await flush();
+    MockIntersectionObserver.instances[0].trigger(img);
+    await flush();
+
+    // 一上来就是弹幕态：开关显示「幕」，图片直接按栏位渲染，没有嵌字覆盖层
+    expect(document.querySelector(".kiss-manga-toggle").textContent).toBe("幕");
+    expect(document.querySelectorAll(".kiss-manga-gutter")).toHaveLength(2);
+    expect(
+      document.querySelectorAll(".kiss-manga-danmaku").length
+    ).toBeGreaterThan(0);
+    expect(document.querySelectorAll(".kiss-manga-overlay")).toHaveLength(0);
+
+    manager.stop();
+  });
+
+  test("缓存里是越界网格时判为坏缓存，重新识别而不是照画", async () => {
+    // 先跑一遍正常流程，拿到管理器写进缓存的条目
+    const first = createManager();
+    const firstImg = createImage();
+    first.start();
+    await flush();
+    MockIntersectionObserver.instances[0].trigger(firstImg);
+    await flush();
+    const stored = setMangaCache.mock.calls.at(-1)[0];
+    first.stop();
+    expect(stored[IMAGE_URL]).toBeTruthy();
+
+    // 把该条换成真机上见过的坏结果：1500 宽的坐标、32 个顶格小格
+    stored[IMAGE_URL].bubbles = Array.from({ length: 32 }, (_, i) => ({
+      box: [i * 100, 0, (i + 1) * 100, 130],
+      src: "",
+      dst: "坏结果",
+      vertical: false,
+    }));
+
+    getMangaCache.mockResolvedValue(stored);
+    callVisionApi.mockClear();
+
+    const second = createManager();
+    const secondImg = createImage();
+    second.start();
+    await flush();
+    MockIntersectionObserver.instances[1].trigger(secondImg);
+    await flush();
+
+    expect(callVisionApi).toHaveBeenCalledTimes(1); // 坏缓存被拒，重新请求
+    expect(
+      document.querySelectorAll(".kiss-manga-bubble").length
+    ).toBeGreaterThan(0);
+    expect(
+      [...document.querySelectorAll(".kiss-manga-bubble")].some(
+        (el) => el.textContent === "坏结果"
+      )
+    ).toBe(false);
+
+    second.stop();
+  });
+
+  test("坐标不可信的结果会记成 coordsRejected，之后不再重复请求同一张图", async () => {
+    const grid = JSON.stringify(
+      Array.from({ length: 32 }, (_, i) => ({
+        box: [i * 100, 0, (i + 1) * 100, 130],
+        src: "",
+        dst: "坏结果",
+        vertical: false,
+      }))
+    );
+
+    callVisionApi.mockResolvedValue(grid);
+    const first = createManager();
+    const firstImg = createImage();
+    first.start();
+    await flush();
+    MockIntersectionObserver.instances[0].trigger(firstImg);
+    await flush();
+    first.stop();
+
+    const stored = setMangaCache.mock.calls.at(-1)[0];
+    expect(stored[IMAGE_URL].coordsRejected).toBe(true);
+    expect(stored[IMAGE_URL].bubbles).toEqual([]);
+    expect(document.querySelectorAll(".kiss-manga-bubble")).toHaveLength(0);
+
+    // 换个页面命中同一条缓存：不该再打接口
+    getMangaCache.mockResolvedValue(stored);
+    callVisionApi.mockClear();
+    const second = createManager();
+    const secondImg = createImage();
+    second.start();
+    await flush();
+    MockIntersectionObserver.instances[1].trigger(secondImg);
+    await flush();
+
+    expect(callVisionApi).not.toHaveBeenCalled();
+    expect(document.querySelectorAll(".kiss-manga-bubble")).toHaveLength(0);
+
+    second.stop();
+  });
+
+  test("侧栏弹幕：译文中心对齐原文纵向中心（不是从文字顶部对齐）", async () => {
+    callVisionApi.mockResolvedValue(
+      JSON.stringify([
+        {
+          box: norm([40, 100, 200, 300]),
+          src: "",
+          dst: "居中",
+          vertical: false,
+        },
+      ])
+    );
+    const manager = createManager();
+    const img = createImage(); // 800×1200
+    // 让渲染高度可测且与原图 1:1，方便验证换算（jsdom 本身不做布局）
+    Object.defineProperty(img, "clientHeight", {
+      value: 1200,
+      configurable: true,
+    });
+    Object.defineProperty(img, "offsetHeight", {
+      value: 1200,
+      configurable: true,
+    });
+    manager.start();
+    await flush();
+    MockIntersectionObserver.instances[0].trigger(img);
+    await flush();
+
+    document
+      .querySelector(".kiss-manga-toggle")
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const chip = document.querySelector(".kiss-manga-danmaku");
+    const fallbackLineHeight = 14 * 1.6; // jsdom 无布局，用兜底行高
+    const top = parseFloat(chip.style.top);
+    // 原文纵向中心 =(100+300)/2 = 200；译文的中心应落在 200
+    expect(top + fallbackLineHeight / 2).toBeCloseTo(200, 1);
+
+    // 位置标记（细线）也落在同一中心线上
+    const marker = document.querySelector(".kiss-manga-marker");
+    expect(parseFloat(marker.style.top)).toBeCloseTo(200 - 1, 1);
+
+    manager.stop();
+  });
+
   test("悬浮开关的三种状态有各自的文案与配色，且 dataset.state 同步", async () => {
     const manager = createManager();
     const img = createImage();
@@ -391,19 +581,19 @@ describe("MangaManager", () => {
     callVisionApi.mockResolvedValue(
       JSON.stringify([
         {
-          box: [40, 100, 200, 300],
+          box: norm([40, 100, 200, 300]),
           src: "",
           dst: "左边的台词",
           vertical: false,
         },
         {
-          box: [60, 140, 220, 320],
+          box: norm([60, 140, 220, 320]),
           src: "",
           dst: "左边更靠下的台词",
           vertical: false,
         },
         {
-          box: [600, 200, 760, 400],
+          box: norm([600, 200, 760, 400]),
           src: "",
           dst: "右边的台词",
           vertical: true,
@@ -485,12 +675,22 @@ describe("MangaManager", () => {
     callVisionApi
       .mockResolvedValueOnce(
         JSON.stringify([
-          { box: [0, 0, 100, 100], src: "", dst: "第一页", vertical: false },
+          {
+            box: norm([0, 0, 100, 100]),
+            src: "",
+            dst: "第一页",
+            vertical: false,
+          },
         ])
       )
       .mockResolvedValueOnce(
         JSON.stringify([
-          { box: [0, 0, 100, 100], src: "", dst: "第二页", vertical: false },
+          {
+            box: norm([0, 0, 100, 100]),
+            src: "",
+            dst: "第二页",
+            vertical: false,
+          },
         ])
       );
 
@@ -664,7 +864,8 @@ describe("MangaManager", () => {
     callVisionApi.mockResolvedValue(
       JSON.stringify([
         {
-          box: [100, 200, 300, 500],
+          // 归一化按「发送尺寸」（1500×2106）换算，才能得到 100/200/300/500 这些像素
+          box: norm([100, 200, 300, 500], 1500, 2106),
           src: "原文",
           dst: "译文",
           vertical: false,

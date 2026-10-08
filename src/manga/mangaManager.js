@@ -9,7 +9,12 @@
 
 import { API_SPE_TYPES, newI18n } from "../config";
 import { getEnabledApis } from "../libs/apiSelection";
-import { getMangaCache, setMangaCache } from "../libs/storage";
+import {
+  getMangaCache,
+  setMangaCache,
+  getMangaMode,
+  setMangaMode,
+} from "../libs/storage";
 import { fetchData } from "../libs/fetch";
 import { getCacheDigest } from "../libs/cacheDigest";
 import { kissLog } from "../libs/log";
@@ -18,6 +23,7 @@ import {
   MANGA_VISION_PROMPT,
   buildMangaVisionPrompt,
   parseVisionResult,
+  validateVisionBubbles,
 } from "./prompt";
 import {
   MODE_MANGA_DANMAKU,
@@ -105,6 +111,8 @@ export default class MangaManager {
       title: i18n("manga_enabled"),
     });
     this.#toggle.setState(this.#toggleState());
+    // 恢复用户上次选的显示方式（换页/翻页后新页面沿用弹幕模式）
+    this.#restoreMode();
 
     this.#io = new IntersectionObserver(this.#handleIntersect, {
       rootMargin: ROOT_MARGIN,
@@ -158,6 +166,42 @@ export default class MangaManager {
   }
 
   /**
+   * 恢复上次保存的显示方式。换页/翻页后重新加载的漫画页面沿用同一方式，
+   * 不会又退回「嵌字」。已在场的译文层同步切过去（不重新请求接口）。
+   */
+  async #restoreMode() {
+    let saved = null;
+    try {
+      saved = await getMangaMode();
+    } catch (err) {
+      return;
+    }
+    if (this.#destroyed || !saved) return;
+    if (
+      saved !== MODE_MANGA_OVERLAY &&
+      saved !== MODE_MANGA_DANMAKU &&
+      saved !== TOGGLE_STATE_OFF
+    ) {
+      return;
+    }
+
+    this.#visible = saved !== TOGGLE_STATE_OFF;
+    // 关闭态回到「嵌字」起点，这样下次循环仍是 漫 → 幕 → 原
+    this.#mode = saved === TOGGLE_STATE_OFF ? MODE_MANGA_OVERLAY : saved;
+
+    this.#states.forEach((state) => {
+      state.layer?.setMode?.(this.#mode);
+      state.layer?.setVisible?.(this.#visible);
+    });
+    this.#toggle?.setState(this.#toggleState());
+  }
+
+  /** 记住当前显示方式，供后续加载的漫画页面沿用 */
+  #persistMode() {
+    Promise.resolve(setMangaMode(this.#toggleState())).catch(() => {});
+  }
+
+  /**
    * 循环切换显示方式：嵌字 → 侧栏弹幕 → 原图 → 嵌字。
    * 只改显示方式与显隐，不重新请求接口（译文与坐标都已在手）。
    */
@@ -176,6 +220,7 @@ export default class MangaManager {
       state.layer?.setVisible?.(this.#visible);
     });
     this.#toggle?.setState(this.#toggleState());
+    this.#persistMode();
   }
 
   #resolveVisionApiSetting() {
@@ -289,8 +334,16 @@ export default class MangaManager {
       cached.sentWidth === sent.width &&
       cached.sentHeight === sent.height
     ) {
-      this.#render(img, url, cached.bubbles, sent.width, sent.height);
-      return;
+      // 旧缓存可能是「坐标越界」的坏结果（见 prompt.js 的校验）。重新校验一次：
+      //   有效条目照用；整条不可信且本就是这个标记（新写入）→ 当作无文字，不再重试；
+      //   旧格式的坏缓存 → 当作没命中，走下面的重新识别。
+      const usable = validateVisionBubbles(cached.bubbles, sent);
+      if (usable.length > 0) {
+        this.#render(img, url, usable, sent.width, sent.height);
+        return;
+      }
+      if (cached.coordsRejected) return;
+      kissLog("manga: cached bubbles rejected, refetching", url);
     }
 
     const image = await this.#toDataUrl(img, url);
@@ -306,8 +359,21 @@ export default class MangaManager {
     });
     if (this.#destroyed) return;
 
-    const bubbles = parseVisionResult(raw);
-    this.#storeCache(url, bubbles, image.width, image.height);
+    // 不带 bound 先解析一次，用来区分两种「空」：
+    //   模型返回了条目但坐标不可信 → 记成 coordsRejected 存下来，避免反复重试同一个坏结果；
+    //   模型本来就没返回条目（这张图没文字）→ 正常缓存。
+    const rawBubbles = parseVisionResult(raw);
+    const bubbles = parseVisionResult(raw, {
+      width: image.width,
+      height: image.height,
+    });
+    const coordsRejected = rawBubbles.length > 0 && bubbles.length === 0;
+    if (coordsRejected) {
+      kissLog("manga: vision boxes out of range, skip rendering", url);
+    }
+    this.#storeCache(url, bubbles, image.width, image.height, {
+      coordsRejected,
+    });
     this.#render(img, url, bubbles, image.width, image.height);
   }
 
@@ -461,13 +527,21 @@ export default class MangaManager {
     await this.#loadCache();
   }
 
-  #storeCache(url, bubbles, sentWidth, sentHeight) {
+  #storeCache(
+    url,
+    bubbles,
+    sentWidth,
+    sentHeight,
+    { coordsRejected = false } = {}
+  ) {
     this.#cache[url] = {
       bubbles,
       sentWidth,
       sentHeight,
       updatedAt: Date.now(),
       promptSig: this.#promptSig,
+      // 模型给了坐标但不可信：记下来，避免每次进视口都重试同一个坏结果
+      ...(coordsRejected ? { coordsRejected: true } : {}),
     };
 
     const keys = Object.keys(this.#cache);

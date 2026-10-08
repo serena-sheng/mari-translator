@@ -7,15 +7,22 @@
 
 import { parseAITerms } from "../libs/utils";
 
+// 坐标校验：允许少量溢出（模型偶有越界一两像素），但越界超过 20% 就说明坐标系不对
+const BOX_SLACK_RATIO = 0.2;
+const MIN_BOX_SIZE = 4; // 夹紧后小于该尺寸的框视为噪声
+const MIN_VALID_RATIO = 0.5; // 有效框占比低于此值 → 整条结果不可信
+
 /**
  * 漫画气泡识别的系统提示词。
  * 约定返回 `[{box:[x1,y1,x2,y2], src, dst, vertical}]`：
- * box 为相对图片自身尺寸的像素坐标，vertical 标识原文是否为竖排。
+ * box 为**归一化坐标**（0~1，x/y 分别除以图宽/图高），vertical 标识原文是否为竖排。
+ * 归一化而非像素：实测（2026-10-09）deepseek-flash 给归一化值时两个方向都准到 0.01 以内，
+ * 给像素值时 y 会被系统性压到 0.7 倍左右（弹幕整体偏上），x 才勉强接近。
  */
 export const MANGA_VISION_PROMPT = `你是漫画翻译引擎。检测图片中所有包含文字的气泡、对话框、旁白框和音效字,将其中文字翻译成简体中文,以严格 JSON 数组返回,不要输出任何其他内容:
 [{"box":[x1,y1,x2,y2],"src":"原文","dst":"译文","vertical":true}]
 要求:
-1. box 为文字区域的像素坐标(相对图片本身尺寸),尽量紧贴文字;
+1. box 用归一化坐标:0~1 之间的小数,x 除以图宽、y 除以图高(左上角是 [0,0],右下角是 [1,1]),保留 4 位小数,紧贴文字;
 2. vertical:原文为竖排(日语漫画常见)则为 true,横排为 false;
 3. 无文字的图返回 [];
 4. 译文要求:这是成人向/一般向漫画,忠实翻译所有露骨内容与潜台词;日语省略的主语和语气(央求、抗拒、羞耻、兴奋等)要在中文体现出来;拟声词翻译为中文惯用拟声词;同一格内多个气泡按阅读顺序排列;
@@ -90,14 +97,91 @@ const normalizeBubble = (item) => {
 };
 
 /**
+ * 校验并夹紧单个气泡的坐标，落在发送图范围内。
+ *
+ * 真机上见过视觉模型把整页当成规则网格返回（例如把一张 1500×1978 的图报成
+ * x 到 3200、y 只占顶部 130px 的 32 个格子）。这类坐标不是这张图的空间，
+ * 拿去渲染只会得到一堆挤在顶部、被堆出几百像素的弹幕，因此越界过多直接丢弃。
+ *
+ * @param {Object} bubble 已归一化的气泡
+ * @param {number} width 发送给模型的图宽
+ * @param {number} height 发送给模型的图高
+ * @returns {Object|null} 夹紧后的气泡，或 null
+ */
+const validateBubbleBox = (bubble, width, height) => {
+  const [x1, y1, x2, y2] = bubble.box;
+  const slackX = width * BOX_SLACK_RATIO;
+  const slackY = height * BOX_SLACK_RATIO;
+  // 与图幅完全不相交（连容差都够不着）→ 坐标系不对，丢弃
+  if (
+    x2 < -slackX ||
+    y2 < -slackY ||
+    x1 > width + slackX ||
+    y1 > height + slackY
+  ) {
+    return null;
+  }
+  const box = [
+    Math.max(0, Math.min(width, x1)),
+    Math.max(0, Math.min(height, y1)),
+    Math.max(0, Math.min(width, x2)),
+    Math.max(0, Math.min(height, y2)),
+  ];
+  if (box[2] - box[0] < MIN_BOX_SIZE || box[3] - box[1] < MIN_BOX_SIZE) {
+    return null;
+  }
+  return { ...bubble, box };
+};
+
+/**
+ * 归一化坐标（0~1）→ 发送图像素坐标。
+ * @param {Object} bubble 已归一化的气泡
+ * @param {number} width 发送图宽
+ * @param {number} height 发送图高
+ * @returns {Object}
+ */
+const toPixelBubble = (bubble, width, height) => ({
+  ...bubble,
+  box: [
+    bubble.box[0] * width,
+    bubble.box[1] * height,
+    bubble.box[2] * width,
+    bubble.box[3] * height,
+  ],
+});
+
+/**
+ * 按发送图尺寸校验一组气泡，返回可信的条目。
+ *
+ * 越界过多的整条结果视为不可信（返回空数组），避免拿去渲染或缓存。
+ *
+ * @param {Array<Object>} bubbles 气泡（**像素**坐标，parseVisionResult 已换算）
+ * @param {{width:number,height:number}} bounds 发送图尺寸
+ * @returns {Array<Object>}
+ */
+export const validateVisionBubbles = (bubbles, { width, height } = {}) => {
+  if (!Array.isArray(bubbles)) return [];
+  if (!(width > 0) || !(height > 0)) return bubbles;
+  const valid = bubbles
+    .map((b) => validateBubbleBox(b, width, height))
+    .filter(Boolean);
+  // 大多数坐标都越界 → 整条结果不可信（坐标系不对），当作失败
+  if (bubbles.length && valid.length / bubbles.length < MIN_VALID_RATIO) {
+    return [];
+  }
+  return valid;
+};
+
+/**
  * 从视觉模型的原始回复文本中提取气泡数组。
  *
  * 依次尝试：整段文本直接解析、去掉 markdown 围栏后解析、正则截取首个数组后解析。
  *
  * @param {*} raw 模型返回的原始文本
- * @returns {Array<Object>} 归一化后的气泡数组；无法解析时返回空数组
+ * @param {{width:number,height:number}} [bounds] 发送图尺寸；给了就把归一化坐标换算成像素并校验
+ * @returns {Array<Object>} 气泡数组（带 bounds 时是发送图像素坐标）；无法解析时返回空数组
  */
-export const parseVisionResult = (raw) => {
+export const parseVisionResult = (raw, bounds = null) => {
   const text = typeof raw === "string" ? raw.trim() : "";
   if (!text) return [];
 
@@ -112,9 +196,15 @@ export const parseVisionResult = (raw) => {
   for (const candidate of candidates) {
     try {
       const parsed = JSON.parse(candidate);
-      if (Array.isArray(parsed)) {
-        return parsed.map(normalizeBubble).filter(Boolean);
-      }
+      if (!Array.isArray(parsed)) continue;
+      const bubbles = parsed.map(normalizeBubble).filter(Boolean);
+      if (!bounds || !(bounds.width > 0) || !(bounds.height > 0))
+        return bubbles;
+      // 模型给的是归一化坐标：换算成发送图像素后再校验
+      const pixels = bubbles.map((b) =>
+        toPixelBubble(b, bounds.width, bounds.height)
+      );
+      return validateVisionBubbles(pixels, bounds);
     } catch (err) {
       // 该形态解析失败，继续尝试下一种提取方式
     }

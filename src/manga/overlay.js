@@ -211,7 +211,7 @@ const createGutters = (
 
   const mid = naturalWidth / 2;
   const items = bubbles.map((bubble) => {
-    const [x1, y1, x2] = bubble.box;
+    const [x1, y1, x2, y2] = bubble.box;
     const side = (x1 + x2) / 2 < mid ? "left" : "right";
     const el = document.createElement("div");
     el.className = `${DANMAKU_CLASS} notranslate`;
@@ -244,7 +244,7 @@ const createGutters = (
         { duration: 180, easing: "ease-out" }
       );
     }
-    return { el, side, anchor: y1 };
+    return { el, side, anchor: (y1 + y2) / 2 };
   });
 
   // 撑一条细线在栏的靠图一侧，标出该条弹幕对应的原文纵向位置
@@ -265,31 +265,36 @@ const createGutters = (
 
   const sync = () => {
     const renderedHeight = img.clientHeight || img.offsetHeight;
-    // 栏位贴着图片盒子的左右两侧：左栏占图片左侧的栏宽，右栏接在图片右侧
+    const containerWidth = parent.clientWidth || parentWidth;
+    // 栏位贴容器左右边缘（而不是贴着图片），这样同一页里宽度不同的图片
+    // （例如未压窄的小封面 vs 压窄后的正文页）译文列始终在同一条竖线上。
     gutters.left.style.top = `${img.offsetTop}px`;
     gutters.left.style.height = `${img.offsetHeight}px`;
-    gutters.left.style.left = `${img.offsetLeft - gutterWidth}px`;
+    gutters.left.style.left = "0px";
     gutters.right.style.top = `${img.offsetTop}px`;
     gutters.right.style.height = `${img.offsetHeight}px`;
-    gutters.right.style.left = `${img.offsetLeft + img.offsetWidth}px`;
+    gutters.right.style.left = `${Math.max(containerWidth - gutterWidth, 0)}px`;
 
-    // 逐栏堆积：先按锚点从上到下排序，再依次下推，保证互不重叠
+    // 逐栏堆积：先按锚点（原文纵向中心）从上到下排序，再依次下推，保证互不重叠。
+    // 每条译文以「自身中心」对齐原文中心，这样视线与原文基本平齐；只有会重叠时才向下让位。
     ["left", "right"].forEach((side) => {
       let bottom = Number.NEGATIVE_INFINITY;
       items
         .filter((item) => item.side === side)
         .sort((a, b) => a.anchor - b.anchor)
         .forEach((item) => {
-          const desired = (item.anchor / naturalHeight) * renderedHeight;
-          const top = Math.max(desired, bottom + DANMAKU_GAP);
+          const chipH = item.el.offsetHeight || DANMAKU_FONT_SIZE * 1.6;
+          const centered =
+            (item.anchor / naturalHeight) * renderedHeight - chipH / 2;
+          const top = Math.max(centered, bottom + DANMAKU_GAP);
           item.el.style.top = `${top}px`;
-          bottom = top + (item.el.offsetHeight || DANMAKU_FONT_SIZE * 1.6);
+          bottom = top + chipH;
         });
     });
 
     markers.forEach(({ mark, anchor }) => {
-      // 标记只表达纵向位置，横向由所在栏贴边决定
-      mark.style.top = `${(anchor / naturalHeight) * renderedHeight}px`;
+      // 标记落在原文的纵向中心（anchor 已是中心），横向由所在栏贴边决定
+      mark.style.top = `${(anchor / naturalHeight) * renderedHeight - 1}px`;
     });
   };
 

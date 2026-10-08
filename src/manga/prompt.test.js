@@ -99,3 +99,43 @@ test("returns an empty list for unusable model output", () => {
 test("keeps an empty array as an explicit no-text result", () => {
   expect(parseVisionResult("[]")).toEqual([]);
 });
+
+test("带发送图尺寸时，归一化坐标换算成像素，完全越界的丢弃、轻微溢出的夹回图内", () => {
+  const raw = JSON.stringify([
+    { box: [0.01, 0.01, 0.1, 0.2], dst: "正常", vertical: false },
+    { box: [-0.5, -0.5, -0.4, -0.4], dst: "完全在图外", vertical: false },
+    { box: [0.99, 0.02, 1.05, 0.13], dst: "右侧轻微溢出", vertical: false },
+  ]);
+
+  const out = parseVisionResult(raw, { width: 1500, height: 1978 });
+  expect(out.map((b) => b.dst)).toEqual(["正常", "右侧轻微溢出"]);
+  // 0.01×1500 / 0.1×1500 —— 归一化换算成像素
+  expect(out[0].box[0]).toBeCloseTo(15, 5);
+  expect(out[0].box[2]).toBeCloseTo(150, 5);
+  // 1.05×1500=1575 超过图宽，夹回 1500
+  expect(out[1].box[2]).toBe(1500);
+});
+
+test("模型把整页报成规则网格（归一化远超 1）时整条结果判为无效", () => {
+  // 真机复现：模型把整页当成 32 个等宽格子（归一化 x 到 3.2），不是文字框
+  const raw = JSON.stringify(
+    Array.from({ length: 32 }, (_, i) => ({
+      box: [i / 10, 0, (i + 1) / 10, 0.05],
+      dst: "肉便器",
+      vertical: false,
+    }))
+  );
+  expect(parseVisionResult(raw).length).toBe(32); // 不带尺寸时原样返回
+  expect(parseVisionResult(raw, { width: 1500, height: 1978 })).toEqual([]);
+});
+
+test("少数越界、多数正常时保留有效条目", () => {
+  const raw = JSON.stringify([
+    { box: [0.01, 0.01, 0.1, 0.2], dst: "A", vertical: false },
+    { box: [0.2, 0.03, 0.3, 0.23], dst: "B", vertical: false },
+    { box: [0.3, 0.04, 0.4, 0.24], dst: "C", vertical: false },
+    { box: [9, 9, 9.1, 9.1], dst: "越界", vertical: false },
+  ]);
+  const out = parseVisionResult(raw, { width: 1500, height: 1978 });
+  expect(out.map((b) => b.dst)).toEqual(["A", "B", "C"]);
+});
