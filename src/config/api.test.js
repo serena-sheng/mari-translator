@@ -17,6 +17,7 @@ import {
   OPT_TRANS_CLOUDFLAREAI,
   OPT_TRANS_BUILTINAI,
   OPT_TRANS_DEEPSEEK,
+  OPT_TRANS_DEEPSEEKVL,
   OPT_TRANS_EPHONEAI,
   OPT_TRANS_CEREBRAS,
   OPT_TRANS_CLAUDE,
@@ -179,6 +180,21 @@ test("ships vision APIs as opt-in OpenAI-compatible single-image endpoints", () 
     expect(api.httpTimeout).toBeGreaterThan(30);
     expect(api.isDisabled).toBe(true);
   }
+});
+
+// DeepSeek 官方 API 的图片输入能力只由 deepseek-flash 承接（旧的 -vision-exp 已下线），
+// 因此这里把「视觉槽 -> 官方端点 + 支持图片的模型名」钉死，模型改名时会直接红。
+test("pairs the DeepSeek vision slot with the image-capable model", () => {
+  const api = DEFAULT_API_LIST.find(
+    (item) => item.apiType === OPT_TRANS_DEEPSEEKVL
+  );
+
+  expect(api.url).toBe("https://api.deepseek.com/chat/completions");
+  expect(api.model).toBe("deepseek-flash");
+  expect(api.thinkingMode).toBe("disabled");
+  expect(api.httpTimeout).toBeGreaterThanOrEqual(90);
+  // 纯文本 DeepSeek 槽不应被当成视觉接口
+  expect(API_SPE_TYPES.vision.has(OPT_TRANS_DEEPSEEK)).toBe(false);
 });
 
 describe("unified thinking capabilities", () => {
