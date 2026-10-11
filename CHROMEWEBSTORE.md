@@ -46,7 +46,7 @@ Productivity
 | Store Icon [REQUIRED] | 128×128 PNG | ✅ Ready | `public/images/logo128.png` |
 | Screenshot 1 [REQUIRED] | 1280×800 or 640×400 | ✅ Ready | `screenshot-01.jpg` |
 | Screenshot 2 [RECOMMENDED] | 1280×800 or 640×400 | ✅ Ready | `screenshot-02.jpg` |
-| Small Promo Tile [RECOMMENDED] | 440×280 | ⬜ Not created | |
+| Small Promo Tile [RECOMMENDED] | 440×280 | ✅ Ready | `promo-440x280.png` |
 | Marquee Promo Tile | 1400×560 | ⬜ Not created | |
 
 ### Screenshot Notes
@@ -92,7 +92,7 @@ Productivity
 ## Privacy Policy
 
 **Privacy Policy URL**
-<!-- TODO：托管到 GitHub Pages 或任一公开 URL -->
+https://serena-sheng.github.io/chrome-ext-privacy/mari-translator.html
 
 > 本扩展不收集、不存储、不传输任何用户个人信息。翻译所需内容由你的浏览器直接发往你在设置中自行选择的翻译服务，用于生成译文；扩展不保留这些内容，也不向任何其他第三方共享。接口密钥与配置仅保存在本机。
 
