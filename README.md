@@ -2,12 +2,13 @@
 
 [English](README.en.md) | [中文](README.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
-> **个人 fork（分支 `personal-fork`）**：基于上游 `dev` 分支（`a8c5a6f`，版本号 2.1.0），新增两项定制能力，其余行为与上游一致。
+> **个人 fork（分支 `personal-fork`）**：基于上游 `dev` 分支（`a8c5a6f`，版本号 2.1.0），新增三项定制能力，其余行为与上游一致。
 >
 > 1. **站点级 AI 提示词覆盖**：网页规则新增 `aiPrompt` 字段，追加到该站点 AI 翻译的系统提示词末尾（留空不生效）。
 >    内置三套站点规则与术语表：GitHub（编程/AI）、路透/彭博/BBC/经济学人等（政治金融）、成人站点（日英术语 + 露骨内容直译指令）。
 > 2. **漫画图片翻译**：新增视觉接口类型 `QwenVL` / `DeepSeekVL`（OpenAI 兼容协议，DashScope、DeepSeek 官方 API、豆包 Ark、Kimi 等均可）。
->    在规则中把「漫画翻译」设为开启后，页面右下角出现悬浮按钮，循环切换三种显示方式：**嵌字**（「漫」，译文直接盖在原气泡上，支持竖排）→ **侧栏弹幕**（「幕」，把图片压窄、译文像弹幕一样贴在两侧栏里，不挡画面）→ **原图**（「原」）。视觉输入会带上该站点的术语表与补充提示词，思考模式也可按接口配置。
+>    在规则中把「漫画翻译」设为开启后，页面右下角出现悬浮按钮，循环切换三种显示方式：**嵌字**（「漫」，译文直接盖在原气泡上，支持竖排）→ **侧栏弹幕**（「幕」，把图片压窄、译文像弹幕一样贴在两侧栏里，不挡画面；爆满侧栏可滚动）→ **原图**（「原」）。视觉输入会带上该站点的术语表与补充提示词，思考模式也可按接口配置。
+> 3. **真希波主题（mari）**：全套界面换成粉白玻璃视觉（品牌色板 `M3_BRAND_COLORS.mari` + SF 字族 + squircle 粉渐变图标），浅色/深色两套 token。
 >
 > 使用、改动清单与手测见 [个人 fork 改动](#个人-fork-改动personal-fork)。
 
@@ -255,6 +256,8 @@ window.dispatchEvent(new CustomEvent("kiss_translator", {detail: { action: "togg
   也支持任何其它 OpenAI 兼容的视觉服务（豆包 Ark、Kimi、SiliconFlow 托管的开源 VL、本机 MLX/Ollama 等）：改 `url` / `model` / `key` 即可。该槽默认关闭聚合与流式，漫画翻译走独立的单图请求链路（每次一张图；接口默认超时 90s，可在接口配置里改）。
 - 开启方式：在目标站点的网页规则里把「漫画翻译」设为**开启**。此时页面右下角出现悬浮按钮，循环切换：**嵌字**（「漫」= 译文盖在原图上）→ **侧栏弹幕**（「幕」= 图片压窄、译文贴在两侧栏里，纵向对齐原文、逐条向下堆积不重叠、统一 14px 横排）→ **原图**（「原」= 关掉译文并还原图片尺寸）。切换只改显示方式，不会重新请求接口。
 - 两种显示方式的分工：**嵌字**贴近原版面、适合对照阅读；**侧栏弹幕**不遮挡画面（栏位只在图片左右两侧，译文按气泡左右分栏），适合只想快速看对话时用。
+- **弹幕栏位爆满可滚动**：某一侧译文条数超出栏位高度时，该侧栏位变为独立滚动区（只滚栏位、不动页面），两端用渐隐 + 小三角作低调「还有内容」提示。
+- **性能**：图片处理按「离视口最近优先」排队并提前 300px 预取，发送前的压缩走 `OffscreenCanvas` 离屏线程，长页滚动时漫画翻译不再掉帧、译文也跟得上阅读位置。
 - 工作方式：`IntersectionObserver` + `MutationObserver` 只处理进入视口的 `≥300px` 图片（懒加载、翻页原地换 `src`、SPA 都覆盖）；图片经 background 代理下载转 dataURL（跨域图片不受 CORS 限制；若站点有防盗链导致下载被拒，则退回同源 canvas 兜底，跨域图片在兜底路径上会失败并跳过该图），宽度超过 1300px 先压缩再发送（DeepSeek 视觉侧内部长边上限就是约 1300，送更大纯属浪费带宽）；视觉模型返回严格 JSON（`box`/`src`/`dst`/`vertical`），带 markdown 围栏等脏输出会被容错解析；结果按图片 URL 缓存（最多 200 条，超出按更新时间淘汰），覆盖层用百分比定位 + `ResizeObserver` 重算字号，图片缩放时自动跟随，`vertical: true` 的气泡竖排渲染。
 - **站点规则同时作用于视觉链路**：漫画翻译的视觉提示词 = 固定基础指令 + 该站点规则的术语表（`aiTerms`，渲染成 `原文 → 译文`，无译文写「保留原文」）+ 该站点的补充提示词（`aiPrompt`，作为「本站点补充要求」），末尾重申「仍然只输出 JSON 数组」。也就是说预置的成人站点术语表/直译指令、GitHub 的编程术语表，对漫画译文同样生效。改了术语表或提示词后，旧图片缓存会自动失效（缓存条目带着提示词签名，签名不一致就重新识别）。
 - **思考模式对视觉请求同样生效**：视觉接口在设置页里选的思考模式/强度会按厂商协议注入（DeepSeek 的视觉槽默认 `disabled`，会真的带上 `thinking:{"type":"disabled"}`，避免白花 token；难页想让它推理时改成启用即可）。`QwenVL` 侧**不注入**思考字段（DashScope 的 VL 模型不保证接受该字段），需要的话用「自定义请求体」自己加。
@@ -296,6 +299,14 @@ uv pip install --python ~/mlx-serve/bin/python mlx-vlm
 
 模型选型理由：Qwen3-VL 官方 32 语 OCR（含日/中）、竖排文档是其训练强项，Qwen 底模的日→中翻译在开源模型里第一梯队；4B-4bit 在 24GB 统一内存下只占约 3GB，M5 上速度明显快于同档 llama.cpp。备选：`Qwen3-VL-8B-Instruct-4bit`（更准更慢）、`Qwen3-VL-2B-Instruct-4bit`（更快更易漏小字）。
 
+### 3. 真希波主题（mari 粉白玻璃，方向 C）
+
+- 全套界面换成真希波印象的**粉白玻璃**视觉：M3 品牌色板新增 `mari`（浅色主色 `#E93D82`、暖粉 surfaces；深色主色 `#FFA3C9`、暖暗 surfaces），并设为默认品牌色；token 集中在 `src/styles/m3.js` 的 `M3_BRAND_COLORS.mari`，调色改这一处即可。
+- 字族改为 Apple 优先（`-apple-system / SF Pro Text / PingFang SC` 回落链），浅色模式主按钮用品红渐变（`#FFB7D5 → #F0457E`）。
+- 漫画悬浮开关与弹幕同步换肤：白玻璃按钮 + 品红字（嵌字态）、粉渐变底白字（弹幕态，带 `#F0457E` 纯色回落）、灰色（原图态）；弹幕块为白玻璃底 + 品红左边条，滚动提示改粉白渐隐。
+- 旧蓝色 accent（`#209CEE`）在 svg 图标、规则/样式默认值、译文高亮、输入框翻译浮钮中全部替换为 mari 粉。
+- 图标重新生成：超椭圆（squircle，n=4.5）粉渐变底 + 白色 SF Bold「KT」字标，4x 超采样渲染；`_active` 变体加深渐变并加白细环。生成脚本在 `tools/gen-icons.py`（Pillow），改设计后重跑即可再产出 `public/images/logo{16,32,48,128,192}{,_active}.png` 与 `public/favicon.ico`。
+
 ### 改动清单（相对上游）
 
 基线：上游 `dev` 分支 `a8c5a6f`（`package.json` 版本 2.1.0）。本 fork 托管在 `origin`（`serena-sheng/kiss-translator`，私有），上游是 `upstream`（`fishjar/kiss-translator`）。与上游同步：`git fetch upstream && git rebase upstream/dev personal-fork`（先把 `personal-fork` 的改动 rebase 到最新上游，再 push）。
@@ -315,19 +326,29 @@ uv pip install --python ~/mlx-serve/bin/python mlx-vlm
 | `ab7ce3e` | 弹幕按「原文纵向中心」对齐（不再顶部对齐）；栏位列锚定容器边缘（跨图一致）；显示方式持久化（后续页面沿用）；**坐标改用归一化值**（修掉「弹幕普遍偏上」的 y 轴系统性压缩）+ 越界坐标校验与 `coordsRejected` 缓存 |
 | `0f242e3` | 测试：无需真实 Key 的漫画链路 E2E harness（`tools/manga-e2e/`） |
 | `37e1757` | 工具：用 CDP 安装未打包扩展（不弹原生目录框） |
+| `beb645b` | 修复：纯图片无文字页面在保底重试循环下也保留缓存 |
+| `763b1af` | 视觉接口欠费/超时/坐标全坏时按设置页顺序落到下一个启用的视觉槽（本地保底） |
+| `a33afa7` | 构建：修复 pnpm 12 工具链（overrides 移到 `pnpm-workspace.yaml`）+ 补上 `jest-environment-jsdom` |
+| `027ce17` | 弹幕栏位爆满时该侧变为独立滚动区 |
+| `433fd8f` | 爆满滚动栏的低调提示（两端渐隐 + 小三角） |
+| `15cc7d1` | 性能：视口最近优先队列 + 提前预取 + `OffscreenCanvas` 离屏压缩（消除滚动掉帧） |
+| `b9423a0` | 真希波主题：mari 粉白玻璃品牌色板 + SF 字族 + 渐变主按钮 + 漫画 UI 换肤（方向 C） |
+| `f52420e` | 品牌图标重制：squircle 粉渐变 KT 字标（`tools/gen-icons.py` 生成） |
 
 > README/文档自身的改动（`ef3604d` 起）不单列，用 `git log -- README.md` 查。
 
-**新增文件**（3 个源码 + 4 个测试 + 1 个 E2E harness 目录）：
+**新增文件**（3 个源码 + 4 个测试 + 1 个 E2E harness 目录 + 2 个工具脚本）：
 
 | 文件 | 作用 |
 |---|---|
 | `src/manga/mangaManager.js` | 图片发现（IntersectionObserver + MutationObserver）、取图压缩、视觉接口调用、结果缓存、显隐开关与清理 |
-| `src/manga/overlay.js` | 两种显示方式（嵌字覆盖层 / 侧栏弹幕：百分比定位、竖排、字号自适应、左右分栏堆积）与右下角三态悬浮开关 |
+| `src/manga/overlay.js` | 两种显示方式（嵌字覆盖层 / 侧栏弹幕：百分比定位、竖排、字号自适应、左右分栏堆积、爆满滚动）与右下角三态悬浮开关 |
 | `src/manga/prompt.js` | 视觉提示词拼装（基础指令 + 站点术语表/提示词）与模型返回的容错解析 |
 | `tools/manga-e2e/` | 漫画链路 E2E harness：`server.mjs`（桩视觉接口）+ `drive.mjs`（裸 CDP）+ `drive-ego.mjs`（走 ego Space API），不需要真实 API key |
+| `tools/load-extension.mjs` | 用 CDP 把未打包扩展装进带调试口的浏览器（不弹原生目录框） |
+| `tools/gen-icons.py` | 品牌图标生成器（Pillow）：squircle 粉渐变 KT 字标，重跑即再产出全部 PNG 与 favicon |
 
-**修改的上游文件**（`git rebase` 时的冲突面就是下面这 16 个，另有本 `README.md` 本身）：
+**修改的上游文件**（`git rebase` 时的冲突面就是下面这 24 个，外加品牌图片资产与本 `README.md` 本身）：
 
 | 关注点 | 文件 |
 |---|---|
@@ -336,7 +357,9 @@ uv pip install --python ~/mlx-serve/bin/python mlx-vlm
 | 站点提示词生效 | `src/libs/translator.js` |
 | 漫画生命周期与存储 | `src/libs/translatorManager.js`、`src/libs/storage.js`、`src/config/storage.js` |
 | 二进制跨上下文回传 | `src/libs/response.js`（新增 `expect: "base64"`） |
-| 测试补充 | `src/config/api.test.js`、`src/libs/rules.test.js`、`src/libs/translatorManager.test.js`、`src/libs/response.test.js` |
+| 主题与品牌（mari） | `src/styles/m3.js`、`src/hooks/M3Theme.js`、`src/libs/svg.js`、`src/libs/inputTranslate.js`、`src/config/styles.js`、`src/components/Logo/icon.base64.js` |
+| 品牌图片资产 | `public/images/logo{16,32,48,128,192}{,_active}.png`、`public/favicon.ico`（二进制，rebase 时直接取本 fork 版本） |
+| 测试补充 | `src/config/api.test.js`、`src/libs/rules.test.js`、`src/libs/translatorManager.test.js`、`src/libs/response.test.js`、`src/hooks/M3Theme.test.js`、`src/views/RuleEditor/index.test.js` |
 
 ### 开发命令（本 fork 实测）
 
