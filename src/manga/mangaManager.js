@@ -40,7 +40,9 @@ const MAX_SEND_WIDTH = 1300;
 const JPEG_QUALITY = 0.85;
 const MAX_CACHE_ENTRIES = 200; // 缓存条数上限，超出按更新时间淘汰最旧
 const MAX_CONCURRENT = 2; // 同时进行的视觉请求数量
-const ROOT_MARGIN = "150px"; // 视口预取范围：预翻译太近会为用户看不到的图白花钱
+// 视口预取范围（只放纵向，横向不预取）：给用户正在看的内容留一点提前量，
+// 又不至于为翻不到的图白花视觉接口的钱
+const ROOT_MARGIN = "300px 0px";
 const CACHE_SAVE_DELAY = 1000; // 缓存落盘防抖
 const IMAGE_LOAD_TIMEOUT = 15000; // 等待图片解码的兜底超时
 const MANGA_CACHE_SALT = "KISS-Translator-MANGA"; // 提示词签名用的盐
@@ -311,9 +313,32 @@ export default class MangaManager {
     this.#drainQueue();
   }
 
+  /**
+   * 队列取件：优先处理离视口最近的图。
+   * 快速翻页时队列按入队顺序排满已经翻过去的图，严格 FIFO 会让「正在看的图」
+   * 排在队尾死等（落后感的主要来源）。队列很短，逐个读 rect 的开销可忽略。
+   */
+  #pickNextTask() {
+    if (this.#queue.length <= 1) return this.#queue.shift();
+    const viewportMid = (window.innerHeight || 0) / 2;
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    this.#queue.forEach((task, idx) => {
+      const rect = task.img?.getBoundingClientRect?.();
+      const dist = rect
+        ? Math.abs((rect.top + rect.bottom) / 2 - viewportMid)
+        : Number.MAX_SAFE_INTEGER; // 拿不到布局的排最后
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = idx;
+      }
+    });
+    return this.#queue.splice(bestIdx, 1)[0];
+  }
+
   #drainQueue() {
     while (this.#activeCount < MAX_CONCURRENT && this.#queue.length > 0) {
-      const task = this.#queue.shift();
+      const task = this.#pickNextTask();
       this.#activeCount += 1;
       this.#process(task.img, task.url)
         .catch((err) => kissLog("manga: process image failed", err))
@@ -471,6 +496,41 @@ export default class MangaManager {
     const size = sentImageSize(img.naturalWidth, img.naturalHeight);
     if (size.width === img.naturalWidth) {
       return { dataUrl, ...size };
+    }
+
+    // 优先走异步离屏路径：createImageBitmap 的解码与 OffscreenCanvas.convertToBlob
+    // 的编码都不占主线程。旧路径（Image.onload + canvas.toDataURL）全程同步，
+    // 一张长图解码+重编码要几十上百 ms，两个并发任务叠起来就是肉眼可见的卡顿。
+    if (
+      typeof createImageBitmap === "function" &&
+      typeof OffscreenCanvas !== "undefined" &&
+      typeof FileReader !== "undefined"
+    ) {
+      try {
+        const blob = await (await fetch(dataUrl)).blob();
+        const bitmap = await createImageBitmap(blob);
+        try {
+          const canvas = new OffscreenCanvas(size.width, size.height);
+          canvas
+            .getContext("2d")
+            .drawImage(bitmap, 0, 0, size.width, size.height);
+          const outBlob = await canvas.convertToBlob({
+            type: "image/jpeg",
+            quality: JPEG_QUALITY,
+          });
+          const outDataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(outBlob);
+          });
+          return { dataUrl: outDataUrl, width: size.width, height: size.height };
+        } finally {
+          bitmap.close?.();
+        }
+      } catch (err) {
+        kissLog("manga: offscreen shrink failed, use sync path", err);
+      }
     }
 
     const bitmap = await new Promise((resolve) => {
