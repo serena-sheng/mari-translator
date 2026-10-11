@@ -93,7 +93,7 @@ export const RU_I18N = {
   subtitle_playground_ai_stats: `ИИ: протокол {protocol}, блоков {chunks}, запросов {requests}, повторов {retries}, запасных реплик {fallbacks}, некорректных ответов {invalid}`,
 
   // --- 通用 ---
-  app_name: `KISS Translator`,
+  app_name: `MARI Translator`,
   translate: `Перевести`,
   translate_alt: `Перевести`,
   basic_setting: `Основные настройки`,

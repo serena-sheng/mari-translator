@@ -788,9 +788,7 @@ describe("Popup default view", () => {
     window.location.hash = "tranbox";
     await renderPopup("page");
 
-    expect(document.title).toBe(
-      `popup_text_translation · ${process.env.REACT_APP_NAME}`
-    );
+    expect(document.title).toBe(`popup_text_translation · app_name`);
 
     act(() => root.render(null));
     expect(document.title).toBe("Original extension title");

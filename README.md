@@ -1,4 +1,6 @@
-# KISS Translator 简约翻译
+# 翻译娘MARI
+
+> 粉白玻璃主题的双语对照翻译 & 漫画翻译扩展，[KISS Translator 简约翻译](https://github.com/fishjar/kiss-translator) 的个人 fork 开源版。
 
 [English](README.en.md) | [中文](README.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 

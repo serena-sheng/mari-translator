@@ -21,7 +21,7 @@ export default function Header({
   children,
 }) {
   const i18n = useI18n();
-  const appName = process.env.REACT_APP_NAME || "KISS Translator";
+  const appName = i18n("app_name");
   const [supportAnchor, setSupportAnchor] = useState(null);
 
   const handleHomepage = () => {

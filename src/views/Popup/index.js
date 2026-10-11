@@ -189,7 +189,7 @@ export function Trantab({ isSeparate = false, isVisible = true }) {
   const lastClipboardTextRef = useRef("");
   const textRef = useRef(text);
 
-  const separateWindowTitle = `${i18n("popup_text_translation")} · ${process.env.REACT_APP_NAME}`;
+  const separateWindowTitle = `${i18n("popup_text_translation")} · ${i18n("app_name")}`;
   useEffect(() => {
     if (!isSeparate) return undefined;
     const previousTitle = document.title;

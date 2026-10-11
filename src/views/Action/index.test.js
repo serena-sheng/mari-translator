@@ -169,9 +169,7 @@ describe("content action Popup integration", () => {
     expect(container.querySelector("style").textContent).toContain(
       ".kt-popup-shell"
     );
-    expect(panel.getAttribute("aria-label")).toBe(
-      process.env.REACT_APP_NAME || "KISS Translator"
-    );
+    expect(panel.getAttribute("aria-label")).toBe("翻译娘MARI");
     expect(panel.tabIndex).toBe(-1);
   });
 

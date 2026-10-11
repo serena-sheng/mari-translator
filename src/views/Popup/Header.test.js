@@ -83,7 +83,7 @@ describe("Popup Header support menu", () => {
     });
 
     expect(container.querySelector(".kt-popup-brand-button").title).toBe(
-      `${process.env.REACT_APP_NAME || "KISS Translator"} v${process.env.REACT_APP_VERSION}`
+      `app_name v${process.env.REACT_APP_VERSION}`
     );
     act(() => container.querySelector('[aria-label="popup_support"]').click());
     act(() => document.body.querySelector('[role="menuitem"]').click());

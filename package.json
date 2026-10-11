@@ -1,6 +1,6 @@
 {
-  "name": "kiss-translator",
-  "description": "A minimalist bilingual translation Extension & Greasemonkey Script",
+  "name": "mari-translator",
+  "description": "翻译娘MARI · bilingual translation extension & userscript with manga image translation (fork of KISS Translator)",
   "version": "2.1.0",
   "author": "Gabe<yugang2002@gmail.com>",
   "private": true,
