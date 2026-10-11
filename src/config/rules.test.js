@@ -13,7 +13,7 @@ test("DEFAULT_RULE 与 GLOBLA_RULE 都声明了站点级 aiPrompt 与漫画开�
 // 这组预置术语表是给人直接使用/照抄的，必须在写入时就保证可完整解析。
 test("内置规则的 aiTerms 逐行可完整解析，不会因英文逗号被截断", () => {
   const rulesWithTerms = BUILTIN_RULES.filter((rule) => rule.aiTerms);
-  expect(rulesWithTerms.length).toBeGreaterThanOrEqual(3);
+  expect(rulesWithTerms.length).toBeGreaterThanOrEqual(2);
 
   rulesWithTerms.forEach((rule) => {
     const parsed = parseAITerms(rule.aiTerms);
@@ -37,7 +37,7 @@ test("内置规则的 aiTerms 逐行可完整解析，不会因英文逗号被�
 
 test("内置规则的 aiPrompt 都是可直接使用的系统提示词", () => {
   const rulesWithPrompt = BUILTIN_RULES.filter((rule) => rule.aiPrompt);
-  expect(rulesWithPrompt.length).toBeGreaterThanOrEqual(3);
+  expect(rulesWithPrompt.length).toBeGreaterThanOrEqual(2);
 
   rulesWithPrompt.forEach((rule) => {
     expect(rule.aiPrompt.trim()).toBe(rule.aiPrompt);

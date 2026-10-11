@@ -18,16 +18,16 @@ test("site rule without glossary or instruction keeps the base prompt untouched"
 
 test("site glossary and instruction are appended, and the JSON contract is restated", () => {
   const prompt = buildMangaVisionPrompt({
-    aiTerms: "中出し,内射\ntransformer,\n寝取られ,NTR(伴侣被睡走)",
+    aiTerms: "attention,注意力机制\ntransformer,\nquantization,",
     aiPrompt: "语气词里的情绪要体现出来。",
   });
 
   expect(prompt.startsWith(MANGA_VISION_PROMPT)).toBe(true);
   expect(prompt).toContain("术语表(优先使用下列译法,未列出的按语境直译):");
-  expect(prompt).toContain("中出し → 内射");
+  expect(prompt).toContain("attention → 注意力机制");
   // 无译文的条目 = 保留原文
   expect(prompt).toContain("transformer → 保留原文");
-  expect(prompt).toContain("寝取られ → NTR(伴侣被睡走)");
+  expect(prompt).toContain("quantization → 保留原文");
   expect(prompt).toContain("本站点补充要求:\n语气词里的情绪要体现出来。");
   expect(prompt.trimEnd().endsWith("仍然只输出 JSON 数组。")).toBe(true);
 });
@@ -121,7 +121,7 @@ test("模型把整页报成规则网格（归一化远超 1）时整条结果判
   const raw = JSON.stringify(
     Array.from({ length: 32 }, (_, i) => ({
       box: [i / 10, 0, (i + 1) / 10, 0.05],
-      dst: "肉便器",
+      dst: "越界",
       vertical: false,
     }))
   );
