@@ -5,6 +5,7 @@
  * 1. `overlay`（嵌字）：在图片上按气泡坐标铺译文块（原行为）。
  * 2. `danmaku`（侧栏弹幕）：把图片压窄，在两侧腾出栏位，译文像弹幕一样贴在栏里，
  *    纵向与原文位置对齐、逐条向下堆积不重叠、统一横排字号，按气泡左右分栏。
+ *    某一侧译文堆出图片高度（爆满）时，该侧栏转为可滚动，滚动浏览全部译文。
  *
  * 刻意不使用项目的 ShadowDomManager 来挂载：它的 `show()` 二次调用不会刷新已挂载
  * 实例的 props（见 shadowDomManager.js 中的 REVIEW 说明），而这里需要「按图片逐个
@@ -131,7 +132,8 @@ const createOverlay = (
  * 侧栏弹幕模式：把图片压窄，左右各腾一条栏位，译文按原文纵向位置逐条往下堆。
  *
  * 左右分栏按气泡水平中心决定；两栏各自「按锚点排序后顺排」，因此既不重叠，
- * 又尽量贴着原文的纵向位置。
+ * 又尽量贴着原文的纵向位置。某一侧堆出图片高度时该栏转为可滚动（`overflow-y`），
+ * 滚动条出现/消失引起的栏宽变化会通过二次重排消化。
  *
  * @returns {Object} 句柄 `{sync, setVisible, destroy}`
  */
@@ -263,6 +265,25 @@ const createGutters = (
     return { mark, anchor, side };
   });
 
+  // 各栏是否处于「爆满可滚动」状态；状态翻转时需要重排一次
+  // （滚动条会吃掉栏内宽度，译文块随之换行、高度变化）
+  const scrollable = { left: false, right: false };
+  const setScrollable = (side, on) => {
+    const gutter = gutters[side];
+    gutter.style.overflowY = on ? "auto" : "visible";
+    // 可滚动时栏位要接收滚轮/拖拽事件；平时保持穿透，不挡页面
+    gutter.style.pointerEvents = on ? "auto" : "none";
+    gutter.style.overscrollBehavior = on ? "contain" : "";
+    gutter.style.scrollbarWidth = on ? "thin" : "";
+    // 滚动盒会裁掉栏外的内容，原贴在栏外的位置标记改为贴栏内边缘
+    markers
+      .filter((m) => m.side === side)
+      .forEach(({ mark }) => {
+        const prop = side === "left" ? "right" : "left";
+        mark.style[prop] = on ? "0px" : "-6px";
+      });
+  };
+
   const sync = () => {
     const renderedHeight = img.clientHeight || img.offsetHeight;
     const containerWidth = parent.clientWidth || parentWidth;
@@ -278,11 +299,14 @@ const createGutters = (
     // 逐栏堆积：先按锚点（原文纵向中心）从上到下排序，再依次下推，保证互不重叠。
     // 每条译文以「自身中心」对齐原文中心，这样视线与原文基本平齐；只有会重叠时才向下让位。
     ["left", "right"].forEach((side) => {
-      let bottom = Number.NEGATIVE_INFINITY;
-      items
+      const sideItems = items
         .filter((item) => item.side === side)
-        .sort((a, b) => a.anchor - b.anchor)
-        .forEach((item) => {
+        .sort((a, b) => a.anchor - b.anchor);
+      // 最多排两遍：最后一枚译文块底部超出栏高即「爆满」，该侧转为可滚动；
+      // 滚动条出现会改变栏内宽度与译文块高度，状态翻转后再排一遍
+      for (let pass = 0; pass < 2; pass++) {
+        let bottom = Number.NEGATIVE_INFINITY;
+        sideItems.forEach((item) => {
           const chipH = item.el.offsetHeight || DANMAKU_FONT_SIZE * 1.6;
           const centered =
             (item.anchor / naturalHeight) * renderedHeight - chipH / 2;
@@ -290,6 +314,12 @@ const createGutters = (
           item.el.style.top = `${top}px`;
           bottom = top + chipH;
         });
+        // 1px 容差：防止亚像素取整导致状态来回抖动
+        const overflowing = bottom > renderedHeight + 1;
+        if (overflowing === scrollable[side]) break;
+        scrollable[side] = overflowing;
+        setScrollable(side, overflowing);
+      }
     });
 
     markers.forEach(({ mark, anchor }) => {
