@@ -30,6 +30,9 @@ const GUTTER_MAX_WIDTH = 300;
 const DANMAKU_FONT_SIZE = 14;
 const DANMAKU_GAP = 6;
 const MIN_IMAGE_WIDTH = 120;
+// 可滚动栏两端「还有内容」的低调提示高度与触发阈值（px）
+const SCROLL_HINT_HEIGHT = 22;
+const SCROLL_HINT_THRESHOLD = 6;
 
 /** 显示方式 */
 export const MODE_MANGA_OVERLAY = "overlay";
@@ -265,9 +268,63 @@ const createGutters = (
     return { mark, anchor, side };
   });
 
+  // 可滚动栏两端的低调提示：一小条渐隐 + 迷你三角，只在该方向还有未看内容时出现。
+  // 挂在 gutter 外面（同一个定位父容器里），这样它不随内容滚动、始终钉在栏的顶端/底端。
+  const makeScrollHint = (side, edge) => {
+    const el = document.createElement("div");
+    el.className = "kiss-manga-scrollhint notranslate";
+    el.style.cssText = [
+      "position:absolute",
+      `width:${gutterWidth}px`,
+      `height:${SCROLL_HINT_HEIGHT}px`,
+      "display:none",
+      "pointer-events:none",
+      "z-index:11",
+      edge === "top"
+        ? "background:linear-gradient(rgba(24,24,27,0.5), rgba(24,24,27,0))"
+        : "background:linear-gradient(rgba(24,24,27,0), rgba(24,24,27,0.5))",
+    ].join(";");
+    const caret = document.createElement("span");
+    caret.textContent = edge === "top" ? "▴" : "▾";
+    caret.style.cssText = [
+      "position:absolute",
+      "left:50%",
+      "transform:translateX(-50%)",
+      edge === "top" ? "top:2px" : "bottom:2px",
+      "font-size:10px",
+      "line-height:1",
+      "color:rgba(255,255,255,0.75)",
+    ].join(";");
+    el.appendChild(caret);
+    parent.appendChild(el);
+    return el;
+  };
+  const hints = {
+    left: { top: makeScrollHint("left", "top"), bottom: makeScrollHint("left", "bottom") },
+    right: { top: makeScrollHint("right", "top"), bottom: makeScrollHint("right", "bottom") },
+  };
+
   // 各栏是否处于「爆满可滚动」状态；状态翻转时需要重排一次
   // （滚动条会吃掉栏内宽度，译文块随之换行、高度变化）
   const scrollable = { left: false, right: false };
+  const updateHints = (side) => {
+    const gutter = gutters[side];
+    const canScroll = scrollable[side] && gutter.style.display !== "none";
+    const showTop =
+      canScroll && gutter.scrollTop > SCROLL_HINT_THRESHOLD;
+    const showBottom =
+      canScroll &&
+      gutter.scrollTop <
+        gutter.scrollHeight - gutter.clientHeight - SCROLL_HINT_THRESHOLD;
+    hints[side].top.style.display = showTop ? "" : "none";
+    hints[side].bottom.style.display = showBottom ? "" : "none";
+  };
+  Object.keys(gutters).forEach((side) => {
+    gutters[side].addEventListener("scroll", () => updateHints(side), {
+      passive: true,
+    });
+  });
+
   const setScrollable = (side, on) => {
     const gutter = gutters[side];
     gutter.style.overflowY = on ? "auto" : "visible";
@@ -282,6 +339,7 @@ const createGutters = (
         const prop = side === "left" ? "right" : "left";
         mark.style[prop] = on ? "0px" : "-6px";
       });
+    updateHints(side);
   };
 
   const sync = () => {
@@ -295,6 +353,18 @@ const createGutters = (
     gutters.right.style.top = `${img.offsetTop}px`;
     gutters.right.style.height = `${img.offsetHeight}px`;
     gutters.right.style.left = `${Math.max(containerWidth - gutterWidth, 0)}px`;
+
+    // 滚动提示钉在栏位两端（不随内容滚动），位置跟栏位走
+    ["left", "right"].forEach((side) => {
+      const hintLeft =
+        side === "left" ? 0 : Math.max(containerWidth - gutterWidth, 0);
+      hints[side].top.style.top = `${img.offsetTop}px`;
+      hints[side].top.style.left = `${hintLeft}px`;
+      hints[side].bottom.style.top = `${
+        img.offsetTop + img.offsetHeight - SCROLL_HINT_HEIGHT
+      }px`;
+      hints[side].bottom.style.left = `${hintLeft}px`;
+    });
 
     // 逐栏堆积：先按锚点（原文纵向中心）从上到下排序，再依次下推，保证互不重叠。
     // 每条译文以「自身中心」对齐原文中心，这样视线与原文基本平齐；只有会重叠时才向下让位。
@@ -326,6 +396,9 @@ const createGutters = (
       // 标记落在原文的纵向中心（anchor 已是中心），横向由所在栏贴边决定
       mark.style.top = `${(anchor / naturalHeight) * renderedHeight - 1}px`;
     });
+
+    // 重排后各栏滚动余量可能变化，刷新两端的滚动提示
+    Object.keys(gutters).forEach(updateHints);
   };
 
   sync();
@@ -336,6 +409,12 @@ const createGutters = (
       Object.values(gutters).forEach((el) => {
         el.style.display = visible ? "" : "none";
       });
+      Object.values(hints)
+        .flatMap((pair) => [pair.top, pair.bottom])
+        .forEach((el) => {
+          if (!visible) el.style.display = "none";
+        });
+      if (visible) Object.keys(gutters).forEach(updateHints);
       // 弹幕模式靠「压窄图片 + 两侧腾栏」实现，隐藏时必须把图片放回原尺寸，
       // 否则「原图」模式会留下一张被压窄的图（两侧还各空着一条栏位）
       if (visible) {
@@ -347,6 +426,9 @@ const createGutters = (
     },
     destroy() {
       Object.values(gutters).forEach((el) => el.remove());
+      Object.values(hints)
+        .flatMap((pair) => [pair.top, pair.bottom])
+        .forEach((el) => el.remove());
       restoreImage();
     },
   };
