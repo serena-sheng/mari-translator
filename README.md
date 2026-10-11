@@ -311,7 +311,7 @@ uv pip install --python ~/mlx-serve/bin/python mlx-vlm
 
 ### 改动清单（相对上游）
 
-基线：上游 `dev` 分支 `a8c5a6f`（`package.json` 版本 2.1.0）。本 fork 托管在 `origin`（`serena-sheng/kiss-translator`，私有），上游是 `upstream`（`fishjar/kiss-translator`）。与上游同步：`git fetch upstream && git rebase upstream/dev personal-fork`（先把 `personal-fork` 的改动 rebase 到最新上游，再 push）。
+基线：上游 `dev` 分支 `a8c5a6f`（`package.json` 版本 2.1.0）。本仓库 `origin`（[`serena-sheng/mari-translator`](https://github.com/serena-sheng/mari-translator)，开源）即「翻译娘MARI」，上游是 `upstream`（`fishjar/kiss-translator`）。与上游同步：`git fetch upstream && git rebase upstream/dev personal-fork`（先把 `personal-fork` 的改动 rebase 到最新上游，再 push）。
 
 | commit | 内容 |
 |---|---|
