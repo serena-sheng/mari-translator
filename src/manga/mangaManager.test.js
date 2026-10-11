@@ -277,7 +277,7 @@ describe("MangaManager", () => {
       },
     });
 
-    const manager = createManager({ aiTerms: "中出し,内射" });
+    const manager = createManager({ aiTerms: "attention,注意力机制" });
     manager.start();
     await flush();
 
@@ -293,7 +293,7 @@ describe("MangaManager", () => {
 
   test("站点术语表与补充提示词进入视觉提示词", async () => {
     const manager = createManager({
-      aiTerms: "中出し,内射\ntransformer,",
+      aiTerms: "attention,注意力机制\ntransformer,",
       aiPrompt: "语气词里的情绪要体现出来。",
     });
     manager.start();
@@ -304,7 +304,7 @@ describe("MangaManager", () => {
     await flush();
 
     const { prompt } = callVisionApi.mock.calls[0][0];
-    expect(prompt).toContain("中出し → 内射");
+    expect(prompt).toContain("attention → 注意力机制");
     expect(prompt).toContain("transformer → 保留原文");
     expect(prompt).toContain("本站点补充要求:\n语气词里的情绪要体现出来。");
 

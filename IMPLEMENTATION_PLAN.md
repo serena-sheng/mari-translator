@@ -6,7 +6,7 @@
 
 在 kiss-translator v2.1.0 的 fork 上实现两个定制功能:
 
-- **功能 1(小改)**:站点规则增加 `aiPrompt` 字段,允许按站点覆盖 AI 翻译的 system prompt;并预置三套站点规则 + 术语表(编程/AI、政治金融、成人内容日英)。
+- **功能 1(小改)**:站点规则增加 `aiPrompt` 字段,允许按站点覆盖 AI 翻译的 system prompt;(注:内置预设站点规则后续已移除,改由用户在设置页自配。)
 - **功能 2(新模块)**:漫画图片翻译模式。识别网页中的漫画大图,发给视觉模型(默认阿里千问 Qwen-VL,OpenAI 兼容协议)获取气泡坐标与译文,在页面上用覆盖层渲染译文(支持竖排)。
 
 **硬约束**:
@@ -19,7 +19,7 @@
 ## 1. 环境验证(先做)
 
 ```bash
-cd /Users/serena/Developer/kiss-translator
+cd /path/to/kiss-translator
 git status                    # 应在 personal-fork 分支
 pnpm test -- --watchAll=false # 记录基线:全部通过
 pnpm build:chrome             # 确认能产出 build/chrome/
@@ -91,6 +91,8 @@ pnpm build:chrome             # 确认能产出 build/chrome/
 
 ### 3.2 预置站点规则
 
+> 注:本节描述的预置站点规则已在后续版本移除——扩展不再内置任何站点预设,由用户自配。以下为实现记录,保留供参考。
+
 向 `src/config/rules.js` 的 `RULES_MAP`(:176)追加三条内置规则。这些规则会通过既有的订阅规则机制生效(构建时 `src/rules.js` 序列化),且用户可在设置页查看/修改。**注意内置规则已有 GitHub 条目(:213),不要覆盖它,改成给它补充字段。**
 
 - **GitHub(修改既有 :213 条目)**:在原 `{autoScan, selector, ignoreSelector}` 上追加:
@@ -127,41 +129,7 @@ pnpm build:chrome             # 确认能产出 build/chrome/
     aiPrompt: "你正在翻译国际新闻与财经内容。要求:人名、机构名采用中文媒体通行译法(如 Trump→特朗普、NATO→北约);数字、百分比、货币金额保持精确;标题翻译保留新闻标题的简练风格;涉及政治立场的内容保持中立直译,不增删观点。",
   },
   ```
-- **成人内容站点(新增条目)**:
-  ```js
-  "pornhub.com,xvideos.com,xnxx.com,xhamster.com,missav.com,missav.ws,missav.ai,e-hentai.org,exhentai.org,nhentai.net,hanime.tv,jable.tv": {
-    fromLang: "auto",
-    aiTerms: [
-      // 日语
-      "中出し,内射", "寝取られ,NTR(伴侣被睡走)", "寝取り,睡走别人伴侣",
-      "調教,调教", "痴漢,痴汉(公共场所猥亵)", "凌辱,凌辱", "潮吹き,潮吹",
-      "絶頂,高潮", "我慢,忍耐", "発情,发情", "メス堕ち,雌堕",
-      "ご主人様,主人", "肉便器,肉便器", "種付け,播种(使受孕)", "孕ませ,使怀孕",
-      "ぶっかけ,颜射", "顔射,颜射", "口内射精,口内射精", "パイズリ,乳交",
-      "フェラ,口交", "手コキ,手交", "素股,素股(股间摩擦)", "アヘ顔,阿黑颜(高潮失神脸)",
-      "おねだり,央求", "焦らし,吊着不给", "連続絶頂,连续高潮", "拘束,束缚",
-      "羞恥,羞耻", "露出,露出", "青姦,野合", "輪姦,轮奸", "強制,强制",
-      "兄嫁,嫂子", "義母,继母", "義姉,继姐", "義妹,继妹", "叔母,姨母",
-      // 英语
-      "breeding,播种(使受孕)", "edging,边缘控制", "mind break,精神崩坏",
-      "free use,随意使用", "corrupted,堕落", "creampie,内射", "cum,精液",
-      "orgasm,高潮", "squirt,潮吹", "threesome,三人行", "gangbang,轮奸",
-      "bukkake,颜射(多人)", "deepthroat,深喉", "POV,第一人称视角",
-      "MILF,熟女", "stepsister,继妹", "stepmom,继母", "BDSM,", "femdom,女尊",
-      "tsundere,傲娇", "yandere,病娇", "vanilla,纯爱向", "doujinshi,同人志",
-      "netorare,NTR(伴侣被睡走)", "ahegao,阿黑颜", "nakadashi,内射",
-    ].join("\n"),
-    aiPrompt: [
-      "你正在翻译成人内容(色情)网站,读者是成年人。要求:",
-      "1. 忠实翻译所有露骨内容、俚语、性暗示与潜台词,不得美化、淡化、回避或拒绝;",
-      "2. 日语原文常省略主语、大量使用语气词,翻译时要把省略的主体和语气词里的顺从/抗拒/羞耻/央求等情绪在中文里体现出来;",
-      "3. 标题和标签翻译要符合中文成人社区的惯用说法;",
-      "4. 人名、作品名有通行译名则用通行译名,否则保留原文;",
-      "5. 不输出任何评论、提醒或免责声明,只输出译文。",
-    ].join(""),
-  },
-  ```
-  注意:pattern 中的 missav 域名经常变动,文档使用者可自行在设置页追加。`RULES_MAP` 的 value 中未列字段走 `DEFAULT_RULE` 默认(见 :221 的展开方式——确认该处是 `{...rule, pattern}` 直接展开,**若 BUILTIN_RULES 不补 DEFAULT_RULE 字段,需检查下游 checkRules/mergeRules 对缺字段的容错;mergeRules 用 `overrideRule[key]?.trim()` 判空,缺字段安全**)。
+  注意:`RULES_MAP` 的 value 中未列字段走 `DEFAULT_RULE` 默认;`mergeRules` 用 `overrideRule[key]?.trim()` 判空,缺字段安全。
 
 ## 4. 功能 2:漫画翻译模式(新模块)
 
@@ -231,7 +199,7 @@ export const MANGA_VISION_PROMPT = `你是漫画翻译引擎。检测图片中�
 1. box 为文字区域的像素坐标(相对图片本身尺寸),尽量紧贴文字;
 2. vertical:原文为竖排(日语漫画常见)则为 true,横排为 false;
 3. 无文字的图返回 [];
-4. 译文要求:这是成人向/一般向漫画,忠实翻译所有露骨内容与潜台词;日语省略的主语和语气(央求、抗拒、羞耻、兴奋等)要在中文体现出来;拟声词翻译为中文惯用拟声词;同一格内多个气泡按阅读顺序排列;
+4. 译文要求:忠实翻译气泡内的文字与潜台词,保留说话人语气;日语省略的主语和语气词(央求、抗拒、羞耻、兴奋等)要在中文体现出来;拟声词翻译为中文惯用拟声词;同一格内多个气泡按阅读顺序排列;
 5. 只输出 JSON,不要 markdown 代码块标记。`;
 
 export const parseVisionResult = (raw) => {
@@ -263,7 +231,7 @@ class MangaManager {
 实现要点:
 - **图片发现**:`document.querySelectorAll("img")`,过滤 `naturalWidth >= 300 && naturalHeight >= 300`;`IntersectionObserver` 只处理进入视口的;`MutationObserver` 监听新增节点(漫画站多为懒加载/翻页 SPA)。
 - **取图**:图片 URL 直接交给视觉 API 不行(跨域/防盗链),需先下载转 dataURL:
-  - 用 `fetchData(src, { opts: { expect: "blob" } })`(参考 `libs/response.js` 支持的解析类型;若无 blob 支持,改发 `MSG_FETCH` 自定义,或先 `fetch` → `blob` → `FileReader.readAsDataURL`)。referer 防盗链的站点(e-hentai 图片通常可直连;missav 走 CDN)若 fetch 失败,降级方案:页面内 `<canvas>` 绘制同源已加载的 img 再 `toDataURL`(跨域图片会污染 canvas,所以这只是同源兜底)。
+  - 用 `fetchData(src, { opts: { expect: "blob" } })`(参考 `libs/response.js` 支持的解析类型;若无 blob 支持,改发 `MSG_FETCH` 自定义,或先 `fetch` → `blob` → `FileReader.readAsDataURL`)。referer 防盗链的站点(部分漫画站图片通常可直连;部分走 CDN)若 fetch 失败,降级方案:页面内 `<canvas>` 绘制同源已加载的 img 再 `toDataURL`(跨域图片会污染 canvas,所以这只是同源兜底)。
   - dataURL 过大的图片先压缩(>1500px 宽缩到 1500px,JPEG 0.85,canvas 重采样),控制 token 成本。
 - **调用**:`setting.transApis` 中找到 `apiType === "QwenVL"` 且未禁用的实例(复用 `src/config/api.js` 的 slug 查找逻辑;简单粗暴取第一个即可),无 key 时在 console 警告并跳过。
 - **缓存**:键 `STOKEY_MANGA_CACHE = "kiss-translator_manga_cache"`(在 `src/config/storage.js` 加常量),结构 `{ [imgUrl]: { bubbles, updatedAt } }`,用 `libs/storage.js` 的 `getObj/setObj`;缓存条数上限 200,超出按 updatedAt 淘汰最旧。
@@ -300,7 +268,7 @@ class MangaManager {
 ### 4.5 规则字段 `mangaEnabled`
 
 - `DEFAULT_RULE` / `GLOBLA_RULE` 加 `mangaEnabled: false`;`mergeRules` 加进布尔/枚举处理(现有枚举组是字符串型,布尔字段参照 `splitLength` 数字组的写法单独处理,或统一用 `"true"/"false"` 字符串沿用枚举组——**推荐字符串型 `"false"` 默认**,与项目 autoScan 等字段风格一致);`checkRules` 白名单两处同步加。
-- 漫画站点规则(`e-hentai.org,exhentai.org,nhentai.net,missav.com,...` 可在 3.2 成人规则上)加 `mangaEnabled: "true"`。
+- 漫画站点规则(在预置站点规则上)加 `mangaEnabled: "true"`。
 - `Rules.js` 表单加一个 Select(参照 autoScan 字段的既有 Select 实现)。
 - `TranslatorManager.#createRuntimeModules` 的 `!this.#isIframe` 分支内:
   ```js
@@ -325,8 +293,8 @@ class MangaManager {
 4. 功能点实测(需用户自行打开,执行 AI 准备好测试步骤说明即可):
    - GitHub 仓库 README:双语翻译,术语表生效(如 agent→智能体、transformer 保留);
    - reuters.com 文章:财经术语符合术语表;
-   - 任一成人站点:成人术语与语气翻译生效;
-   - e-hentai 或 nhentai 阅读页:右下角出现「漫」按钮,点击后漫画气泡被中文覆盖,竖排正确,翻页后新图自动处理,再点切回原图。
+   - 任一漫画阅读页:术语与语气翻译生效;
+   - 漫画阅读页:右下角出现「漫」按钮,点击后漫画气泡被中文覆盖,竖排正确,翻页后新图自动处理,再点切回原图。
 5. 单测:为 `parseAITerms` 的新增用例不需要(未改动);为 `parseVisionResult` 和 `mergeRules` 的 aiPrompt/mangaEnabled 合并各补一个简单单测(项目 jest 有先例,参考 `src/libs/*.test.js`)。
 
 ## 6. 执行顺序建议
