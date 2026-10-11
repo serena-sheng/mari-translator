@@ -86,15 +86,9 @@
     "cross-env": "^7.0.3",
     "dotenv": "^17.2.1",
     "find-up": "^7.0.0",
+    "jest-environment-jsdom": "^27.5.1",
     "prettier": "3.6.2",
     "react-app-rewired": "^2.2.1",
     "zx": "^8.8.1"
-  },
-  "pnpm": {
-    "overrides": {
-      "fast-xml-parser": "4.5.4",
-      "shell-quote": "1.8.4",
-      "websocket-driver": "0.7.5"
-    }
   }
 }
