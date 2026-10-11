@@ -8,6 +8,7 @@ import {
   GLOBAL_KEY,
   OPT_LANGS_FROM,
   OPT_LANGS_TO,
+  BUILTIN_RULES,
   DEFAULT_RULE,
   GLOBLA_RULE,
   STOKEY_RULES,
@@ -212,7 +213,16 @@ export const mergeRules = (baseRule, overrideRule) => {
 /** Resolve rule precedence without storage access or network requests. */
 export const deriveRuleContext = (
   href,
-  { personalRules, subRules = [], disabledPatterns = [] },
+  {
+    personalRules,
+    subRules = [],
+    disabledPatterns = [],
+    // 本 fork 的内置预置规则（漫画站点 / 站点术语表 / 站点提示词）。
+    // 关键点：它**不**放在订阅规则缓存里。订阅源会定期从网络同步并整体覆盖缓存，
+    // 上游那份 kiss-rules_v2.json 没有 mangaEnabled 字段，一旦被覆盖，
+    // 所有站点规则都会退回 mangaEnabled="false"，漫画模式就再也不启动了。
+    builtinRules = BUILTIN_RULES,
+  },
   sitePattern
 ) => {
   // Derive inheritance from one caller-owned storage snapshot.
@@ -238,14 +248,26 @@ export const deriveRuleContext = (
       ? requestedPersonalRule
       : activePersonalRule;
 
+  // 内置预置规则是低于订阅、高于全局的一层：只补充字段，不覆盖订阅/个人规则。
+  // 订阅源里被用户禁用（disabledPatterns）的 pattern 同样跳过预置规则，
+  // 这样「禁用某个内置站点规则」的开关依然有效。
+  const builtinCandidate = findMatchingRule(builtinRules, href);
+  const matchedBuiltinRule =
+    builtinCandidate && !disabledPatterns.includes(builtinCandidate.pattern)
+      ? builtinCandidate
+      : null;
+
   const candidate = findMatchingRule(subRules, href);
   const matchedSubRule =
     candidate && !disabledPatterns.includes(candidate.pattern)
       ? candidate
       : null;
 
-  // Apply global, subscribed and personal rules in increasing priority.
-  const inherited = mergeRules(globalRule, matchedSubRule);
+  // Apply global, builtin, subscribed and personal rules in increasing priority.
+  const inherited = mergeRules(
+    mergeRules(globalRule, matchedBuiltinRule),
+    matchedSubRule
+  );
   const finalRule = mergeRules(inherited, matchedPersonalRule);
 
   return {
@@ -258,6 +280,7 @@ export const deriveRuleContext = (
         : null,
     personal: matchedPersonalRule || null,
     subscription: matchedSubRule,
+    builtin: matchedBuiltinRule,
     global: globalRule,
     site: matchedPersonalRule || null,
   };

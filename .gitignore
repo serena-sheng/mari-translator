@@ -17,6 +17,8 @@
 
 # misc
 .DS_Store
+# 百度云同步盘在文件上传中产生的临时标记，不属于源码
+*.baiduyun.uploading.cfg
 .env.local
 .env.development.local
 .env.test.local

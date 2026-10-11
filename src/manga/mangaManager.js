@@ -17,7 +17,7 @@ import {
 } from "../libs/storage";
 import { fetchData } from "../libs/fetch";
 import { getCacheDigest } from "../libs/cacheDigest";
-import { kissLog } from "../libs/log";
+import { kissLog, logger } from "../libs/log";
 import { callVisionApi } from "../apis/trans";
 import {
   MANGA_VISION_PROMPT,
@@ -94,7 +94,17 @@ export default class MangaManager {
   /** 规则未开启漫画翻译、或未配置可用的视觉接口时，直接不启动（页面无任何注入） */
   start() {
     if (this.#started || this.#destroyed) return;
-    if (this.#rule?.mangaEnabled !== "true") return;
+    if (this.#rule?.mangaEnabled !== "true") {
+      // 悬浮开关不出现的头号原因就是这条：站点规则没有显式开漫画（默认继承全局 "false"）。
+      // 排查时把日志等级调到 DEBUG 看这行，再去设置页确认「全局规则 / 该站点规则」的
+      // 「漫画图片翻译模式」是否为「启用」。
+      logger.debug(
+        "manga: rule does not enable manga mode, skip",
+        this.#rule?.pattern,
+        this.#rule?.mangaEnabled
+      );
+      return;
+    }
 
     const apiSettings = this.#resolveVisionApiSettings();
     if (apiSettings.length === 0) {

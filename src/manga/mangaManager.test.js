@@ -8,6 +8,7 @@
 
 jest.mock("../libs/log", () => ({
   kissLog: jest.fn(),
+  logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
   LogLevel: { INFO: { value: 3 } },
 }));
 jest.mock("../libs/fetch", () => ({ fetchData: jest.fn() }));

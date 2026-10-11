@@ -298,7 +298,7 @@ const RULES_MAP = {
       aiPrompt:
         "你正在翻译国际新闻与财经内容。要求:人名、机构名采用中文媒体通行译法(如 Trump→特朗普、NATO→北约);数字、百分比、货币金额保持精确;标题翻译保留新闻标题的简练风格;涉及政治立场的内容保持中立直译,不增删观点。",
     },
-  "pornhub.com,xvideos.com,xnxx.com,xhamster.com,missav.com,missav.ws,missav.ai,e-hentai.org,exhentai.org,nhentai.net,hanime.tv,jable.tv":
+  "pornhub.com,xvideos.com,xnxx.com,xhamster.com,missav.com,missav.ws,missav.ai,e-hentai.org,exhentai.org,nhentai.net,hanime.tv,jable.tv,wnacg.com":
     {
       fromLang: "auto",
       mangaEnabled: "true",

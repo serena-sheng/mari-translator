@@ -1,5 +1,6 @@
 import {
   checkRules,
+  deriveRuleContext,
   matchRule,
   matchesRulePattern,
   mergeRules,
@@ -681,10 +682,95 @@ describe("aiPrompt / mangaEnabled 字段链路", () => {
       (rule) => rule.mangaEnabled === "true"
     );
     expect(mangaRules).toHaveLength(1);
-    ["https://e-hentai.org/g/1/abc", "https://missav.ws/en/abc"].forEach(
-      (href) => {
-        expect(matchesRulePattern(href, mangaRules[0].pattern)).toBe(true);
-      }
-    );
+    [
+      "https://e-hentai.org/g/1/abc",
+      "https://missav.ws/en/abc",
+      "https://www.wnacg.com/photos-index-aid-1234.html",
+      "https://www.wnacg.com/photos-view-id-9876.html",
+    ].forEach((href) => {
+      expect(matchesRulePattern(href, mangaRules[0].pattern)).toBe(true);
+    });
+  });
+
+  // 回归：预置规则曾作为「内置订阅源」写进订阅缓存，而订阅源每 24h 会从
+  // 上游 kiss-rules_v2.json 整体同步并覆盖该缓存。上游那份没有 mangaEnabled，
+  // 覆盖后所有站点规则都退回 "false"，漫画模式再也起不来（页面连悬浮开关都没有）。
+  // 现在预置规则是常驻的独立规则层，不再依赖订阅缓存。
+  test("订阅缓存被上游覆盖后，预置规则仍在合并结果里生效", () => {
+    const href = "https://e-hentai.org/g/123456/abcdef/";
+    // 模拟同步后的订阅缓存：上游规则，不含 mangaEnabled / aiTerms 等 fork 字段
+    const syncedSubRules = [
+      { pattern: "example.com", selector: ".synced" },
+      { pattern: "github.com", selector: ".markdown-body" },
+    ];
+
+    const { effective } = deriveRuleContext(href, {
+      personalRules: [{ ...GLOBLA_RULE }],
+      subRules: syncedSubRules,
+    });
+    expect(effective.mangaEnabled).toBe("true");
+
+    // 个人规则仍然最高优先级：显式关掉就能关掉
+    const { effective: off } = deriveRuleContext(href, {
+      personalRules: [
+        { ...GLOBLA_RULE },
+        { pattern: "e-hentai.org", mangaEnabled: "false" },
+      ],
+      subRules: syncedSubRules,
+    });
+    expect(off.mangaEnabled).toBe("false");
+
+    // 未命中任何预置/个人规则的站点不启用漫画
+    const { effective: plain } = deriveRuleContext("https://example.org/a", {
+      personalRules: [{ ...GLOBLA_RULE }],
+      subRules: syncedSubRules,
+    });
+    expect(plain.mangaEnabled).toBe("false");
+  });
+
+  // 用户站（绅士漫画）也必须开箱即启用漫画模式：根域与阅读页 URL 都要命中，
+  // 且同样不受订阅缓存被上游覆盖的影响。
+  test("wnacg 站点命中预置漫画规则并启用漫画模式", () => {
+    const syncedSubRules = [{ pattern: "wnacg.com", selector: ".upstream" }];
+    [
+      "https://www.wnacg.com/",
+      "https://www.wnacg.com/photos-index-aid-1234.html",
+      "https://www.wnacg.com/photos-view-id-9876.html",
+    ].forEach((href) => {
+      const { effective } = deriveRuleContext(href, {
+        personalRules: [{ ...GLOBLA_RULE }],
+        subRules: syncedSubRules,
+      });
+      expect(effective.mangaEnabled).toBe("true");
+      // 预置只补字段，不抢订阅同步回来的站点选择器
+      expect(effective.selector).toBe(".upstream");
+    });
+  });
+
+  test("预置规则只补充字段，不覆盖订阅规则的站点选择器", () => {
+    const href = "https://github.com/x/y";
+    const { effective } = deriveRuleContext(href, {
+      personalRules: [{ ...GLOBLA_RULE }],
+      // 订阅源同步回来的 github 站点选择器
+      subRules: [{ pattern: "github.com", selector: ".upstream-only" }],
+    });
+
+    expect(effective.selector).toBe(".upstream-only");
+    // 预置规则里的站点术语表依然带上了
+    expect(effective.aiTerms).toContain("LLM,大语言模型");
+  });
+
+  test("禁用的订阅 pattern 同时跳过对应的预置规则", () => {
+    const href = "https://e-hentai.org/g/1/abc/";
+    const builtinPattern = BUILTIN_RULES.find(
+      (rule) => rule.mangaEnabled === "true"
+    ).pattern;
+
+    const { effective } = deriveRuleContext(href, {
+      personalRules: [{ ...GLOBLA_RULE }],
+      subRules: [],
+      disabledPatterns: [builtinPattern],
+    });
+    expect(effective.mangaEnabled).toBe("false");
   });
 });
