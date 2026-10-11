@@ -47,6 +47,6 @@ export const DEFAULT_CUSTOM_STYLES = [
   {
     styleSlug: "custom",
     styleName: "Custom Style",
-    styleCode: `color: #209CEE;`, // 自定义样式的 CSS 原生规则字符串
+    styleCode: `color: #F0457E;`, // 自定义样式的 CSS 原生规则字符串
   },
 ];

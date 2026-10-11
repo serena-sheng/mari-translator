@@ -75,8 +75,8 @@ const createOverlay = (
       `top:${((y1 / naturalHeight) * 100).toFixed(4)}%`,
       `width:${(((x2 - x1) / naturalWidth) * 100).toFixed(4)}%`,
       `min-height:${(((y2 - y1) / naturalHeight) * 100).toFixed(4)}%`,
-      // 不透明底：把原文盖住，避免中英叠在一起
-      "background:#fffdf5",
+      // 不透明底：把原文盖住，避免中英叠在一起（粉白呼应主题）
+      "background:#FFF8FB",
       "color:#111",
       "border-radius:6px",
       "padding:1px 2px",
@@ -229,8 +229,13 @@ const createGutters = (
       "width:100%",
       `font-size:${DANMAKU_FONT_SIZE}px`,
       "line-height:1.35",
-      "color:#fff",
-      "background:rgba(24,24,27,0.9)",
+      // 方向 C：白玻璃弹幕块，品红左边条点睛；漫画页再花也压得住
+      "color:#3A2230",
+      "background:rgba(255,255,255,0.9)",
+      "backdrop-filter:blur(10px)",
+      "-webkit-backdrop-filter:blur(10px)",
+      "border-left:3px solid #F0457E",
+      "box-shadow:0 1px 4px rgba(0,0,0,0.18)",
       "border-radius:6px",
       "padding:3px 6px",
       "overflow-wrap:break-word",
@@ -261,7 +266,7 @@ const createGutters = (
       "width:4px",
       "height:2px",
       "border-radius:1px",
-      "background:rgba(24,24,27,0.55)",
+      "background:rgba(240,69,126,0.6)",
       side === "left" ? "right:-6px" : "left:-6px",
     ].join(";");
     gutters[side].appendChild(mark);
@@ -281,8 +286,8 @@ const createGutters = (
       "pointer-events:none",
       "z-index:11",
       edge === "top"
-        ? "background:linear-gradient(rgba(24,24,27,0.5), rgba(24,24,27,0))"
-        : "background:linear-gradient(rgba(24,24,27,0), rgba(24,24,27,0.5))",
+        ? "background:linear-gradient(rgba(253,247,250,0.92), rgba(253,247,250,0))"
+        : "background:linear-gradient(rgba(253,247,250,0), rgba(253,247,250,0.92))",
     ].join(";");
     const caret = document.createElement("span");
     caret.textContent = edge === "top" ? "▴" : "▾";
@@ -293,7 +298,7 @@ const createGutters = (
       edge === "top" ? "top:2px" : "bottom:2px",
       "font-size:10px",
       "line-height:1",
-      "color:rgba(255,255,255,0.75)",
+      "color:rgba(233,61,130,0.85)",
     ].join(";");
     el.appendChild(caret);
     parent.appendChild(el);
@@ -515,11 +520,24 @@ const TOGGLE_LABELS = {
   [TOGGLE_STATE_OFF]: "原",
 };
 
-// 三种状态的按钮配色：嵌字=深色、侧栏弹幕=蓝色（区别于嵌字）、原图=灰色（关闭态）
-const TOGGLE_BACKGROUNDS = {
-  [MODE_MANGA_OVERLAY]: "rgba(24,24,27,0.86)",
-  [MODE_MANGA_DANMAKU]: "rgba(37,99,235,0.9)",
-  [TOGGLE_STATE_OFF]: "rgba(140,140,140,0.8)",
+// 三种状态的按钮配色（方向 C「08号机」）：嵌字=白玻璃底品红字、
+// 侧栏弹幕=品红底白字（主操作高亮）、原图=灰色（关闭态）
+const TOGGLE_STYLES = {
+  [MODE_MANGA_OVERLAY]: {
+    backgroundColor: "rgba(255,255,255,0.88)",
+    backgroundImage: "none",
+    color: "#E93D82",
+  },
+  [MODE_MANGA_DANMAKU]: {
+    backgroundColor: "#F0457E",
+    backgroundImage: "linear-gradient(135deg, #FFB7D5 0%, #F0457E 100%)",
+    color: "#FFFFFF",
+  },
+  [TOGGLE_STATE_OFF]: {
+    backgroundColor: "rgba(140,140,140,0.8)",
+    backgroundImage: "none",
+    color: "#FFFFFF",
+  },
 };
 
 /**
@@ -548,9 +566,11 @@ export const mountMangaToggle = ({ onClick, title = "" }) => {
     "padding:0",
     "appearance:none",
     "border-radius:50%",
-    "box-shadow:0 2px 8px rgba(0,0,0,0.35)",
-    "background:rgba(24,24,27,0.86)",
-    "color:#fff",
+    "box-shadow:0 2px 8px rgba(0,0,0,0.28)",
+    "backdrop-filter:blur(10px)",
+    "-webkit-backdrop-filter:blur(10px)",
+    "background:rgba(255,255,255,0.88)",
+    "color:#E93D82",
     "font-size:18px",
     "line-height:1",
     "cursor:pointer",
@@ -566,10 +586,12 @@ export const mountMangaToggle = ({ onClick, title = "" }) => {
   return {
     /** 切换按钮呈现：`overlay` → 漫（嵌字）、`danmaku` → 幕（侧栏弹幕）、`off` → 原 */
     setState(state) {
+      const style = TOGGLE_STYLES[state] || TOGGLE_STYLES[TOGGLE_STATE_OFF];
       btn.textContent = TOGGLE_LABELS[state] || TOGGLE_LABELS[TOGGLE_STATE_OFF];
       btn.dataset.state = state;
-      btn.style.background =
-        TOGGLE_BACKGROUNDS[state] || TOGGLE_BACKGROUNDS[TOGGLE_STATE_OFF];
+      btn.style.backgroundColor = style.backgroundColor;
+      btn.style.backgroundImage = style.backgroundImage;
+      btn.style.color = style.color;
     },
     destroy() {
       btn.remove();

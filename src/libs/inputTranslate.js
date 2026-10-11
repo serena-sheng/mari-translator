@@ -432,7 +432,7 @@ export class InputTranslator {
     this.#floatBtn.style.cssText = `
         position: fixed;
         width: ${size}; height: ${size};
-        background: #209CEE;
+        background: linear-gradient(135deg, #FFB7D5 0%, #F0457E 100%);
         border-radius: 50%;
         z-index: 2147483647;
         cursor: pointer;

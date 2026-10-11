@@ -11,7 +11,7 @@ export const GLOBAL_KEY = "*"; // 全局匹配键名，表示继承全局设置
 export const REMAIN_KEY = "-"; // 保留/排除键名，表示不执行继承
 export const SHADOW_KEY = ">>>"; // 用于深度穿透 Shadow DOM 的 CSS 选择器分隔符
 
-export const DEFAULT_COLOR = "#209CEE"; // 默认的生词高亮背景色/波浪线颜色
+export const DEFAULT_COLOR = "#F0457E"; // 默认的生词高亮背景色/波浪线颜色
 
 export const DEFAULT_TRANS_TAG = "font"; // 默认翻译译文所外包的 HTML 标签名
 export const DEFAULT_SELECT_STYLE =

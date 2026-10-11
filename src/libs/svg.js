@@ -3,13 +3,13 @@
  */
 export const loadingSvg = `<svg viewBox="-20 0 100 100" 
      style="display: inline-block; width: 1em; height: 1em; vertical-align: middle;">
-  <circle fill="#209CEE" stroke="none" cx="6" cy="50" r="6">
+  <circle fill="#F0457E" stroke="none" cx="6" cy="50" r="6">
     <animateTransform attributeName="transform" dur="1s" type="translate" values="0 15 ; 0 -15; 0 15" repeatCount="indefinite" begin="0.1"/>
   </circle>
-  <circle fill="#209CEE" stroke="none" cx="30" cy="50" r="6">
+  <circle fill="#F0457E" stroke="none" cx="30" cy="50" r="6">
     <animateTransform attributeName="transform" dur="1s" type="translate" values="0 10 ; 0 -10; 0 10" repeatCount="indefinite" begin="0.2"/>
   </circle>
-  <circle fill="#209CEE" stroke="none" cx="54" cy="50" r="6">
+  <circle fill="#F0457E" stroke="none" cx="54" cy="50" r="6">
     <animateTransform attributeName="transform" dur="1s" type="translate" values="0 5 ; 0 -5; 0 5" repeatCount="indefinite" begin="0.3"/>
   </circle>
 </svg>
@@ -44,7 +44,7 @@ export function createLoadingSVG() {
 
   circleData.forEach((data) => {
     const circle = createSVGElement("circle", {
-      fill: "#209CEE",
+      fill: "#F0457E",
       stroke: "none",
       cx: data.cx,
       cy: "50",
@@ -116,8 +116,8 @@ export function createLogoSVG({
     version: "1.1",
   });
 
-  const primaryColor = "#209CEE";
-  const secondaryColor = "#E9F5FD";
+  const primaryColor = "#F0457E";
+  const secondaryColor = "#FDEDF4";
 
   const path1Fill = isSelected ? secondaryColor : primaryColor;
   const path2Fill = isSelected ? primaryColor : secondaryColor;

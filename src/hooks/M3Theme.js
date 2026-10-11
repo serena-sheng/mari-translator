@@ -17,7 +17,9 @@ export { getMuiSwitchStyleOverrides } from "./themeStyles";
 
 const EMPTY_THEME_OPTIONS = Object.freeze({});
 const EMPTY_GLOBAL_STYLES = Object.freeze({});
-const M3_BRAND_COLOR = "blue";
+const M3_BRAND_COLOR = "mari";
+// 方向 C 的主按钮渐变：樱粉 → 品红（08号机涂装），只给浅色模式的实心按钮用
+const MARI_GRADIENT = "linear-gradient(135deg, #FFB7D5 0%, #F0457E 100%)";
 
 export default function M3Theme({
   children,
@@ -120,7 +122,23 @@ export default function M3Theme({
               "&:active": { transform: "scale(.98)" },
               "&.Mui-focusVisible": focusRing,
             },
-            contained: { boxShadow: "none" },
+            contained: {
+              boxShadow: "none",
+              ...(resolvedMode === "light" && {
+                background: MARI_GRADIENT,
+                color: "#FFFFFF",
+                textShadow: "0 1px 1px rgba(160, 20, 80, .25)",
+                "&:hover": {
+                  background:
+                    "linear-gradient(135deg, #FFA8CC 0%, #EC3684 100%)",
+                },
+                "&.Mui-disabled": {
+                  background: color.surfaceHighest,
+                  color: color.onSurfaceVariant,
+                  textShadow: "none",
+                },
+              }),
+            },
           },
         },
         MuiIconButton: {

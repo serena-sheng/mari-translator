@@ -706,7 +706,7 @@ describe("MangaManager", () => {
       seen.push([
         toggle.textContent,
         toggle.dataset.state,
-        toggle.style.background,
+        toggle.style.backgroundColor,
       ]);
       click();
     }

@@ -466,9 +466,9 @@ test("the editor keeps its M3 font, filled fields and pill buttons on small-root
     await render();
     const themeRoot = container.querySelector(".kt-m3-root");
     expect(themeRoot.dataset.theme).toBe("light");
-    expect(themeRoot.style.getPropertyValue("--kt-pri")).toBe("#0B57D0");
+    expect(themeRoot.style.getPropertyValue("--kt-pri")).toBe("#E93D82");
     const save = container.querySelector('[aria-label="rule_editor_save"]');
-    expect(getComputedStyle(save).fontFamily).toContain("Google Sans");
+    expect(getComputedStyle(save).fontFamily).toContain("-apple-system");
     expect(getComputedStyle(save).fontSize).toBe("13px");
     expect(getComputedStyle(save).borderRadius).toBe("999px");
     expect(container.querySelector(".MuiFilledInput-root")).not.toBeNull();

@@ -55,6 +55,44 @@ export const M3_COLORS = {
 
 export const M3_BRAND_COLORS = {
   blue: { light: {}, dark: {} },
+  // 真希波主题（方向 C「08号机」粉白玻璃）：主色取自 EVA-08 的品红，
+  // 浅色 surfaces 带一丝粉暖，深色 surfaces 微微偏酒红；深色模式的粉
+  // 按 HIG 暗色规范提亮降饱和，保证可读性。
+  mari: {
+    light: {
+      primary: "#E93D82",
+      onPrimary: "#FFFFFF",
+      primaryContainer: "#FFD9E7",
+      onPrimaryContainer: "#5E1033",
+      secondaryContainer: "#FFE7F0",
+      onSecondaryContainer: "#57162F",
+      background: "#FDF7FA",
+      surfaceLow: "#FAF1F5",
+      surfaceContainer: "#F7EBF1",
+      surfaceHigh: "#F3E4EC",
+      surfaceHighest: "#EDD9E2",
+      outlineVariant: "#E8CFDA",
+      inverseSurface: "#3A2A32",
+      onInverseSurface: "#F7EAEF",
+    },
+    dark: {
+      primary: "#FFA3C9",
+      onPrimary: "#5E1033",
+      primaryContainer: "#B02A63",
+      onPrimaryContainer: "#FFD9E7",
+      secondaryContainer: "#5C2B3E",
+      onSecondaryContainer: "#FFE7F0",
+      background: "#171213",
+      surface: "#1F1A1C",
+      surfaceLow: "#241D20",
+      surfaceContainer: "#292225",
+      surfaceHigh: "#2E262A",
+      surfaceHighest: "#3A3035",
+      outlineVariant: "#4A3D42",
+      inverseSurface: "#F0E2E8",
+      onInverseSurface: "#332028",
+    },
+  },
   cyan: {
     light: {
       primary: "#006874",
@@ -139,8 +177,9 @@ export function createM3CssVariableDeclarations(colors) {
     .join("\n");
 }
 
+// HIG 字族：Apple 平台用 SF，中文回落苹方，其余平台退回系统默认无衬线
 export const M3_FONT_FAMILY =
-  '"Google Sans Flex", "Google Sans", "Noto Sans SC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, "Segoe UI", sans-serif';
 
 export const M3_GLOBAL_CSS = String.raw`
 :host,
@@ -149,7 +188,7 @@ export const M3_GLOBAL_CSS = String.raw`
   --kt-shadow-1: 0 1px 2px rgba(0, 0, 0, .14), 0 1px 6px 1px rgba(0, 0, 0, .08);
   --kt-shadow-2: 0 4px 8px 3px rgba(0, 0, 0, .1), 0 1px 3px rgba(0, 0, 0, .18);
   color: var(--kt-on);
-  font-family: "Google Sans Flex", "Google Sans", "Noto Sans SC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
