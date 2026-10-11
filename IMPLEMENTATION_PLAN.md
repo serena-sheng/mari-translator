@@ -19,7 +19,7 @@
 ## 1. 环境验证(先做)
 
 ```bash
-cd /Users/serena/Developer/kiss-translator
+cd /path/to/kiss-translator
 git status                    # 应在 personal-fork 分支
 pnpm test -- --watchAll=false # 记录基线:全部通过
 pnpm build:chrome             # 确认能产出 build/chrome/

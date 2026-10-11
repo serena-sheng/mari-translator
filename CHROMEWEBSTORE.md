@@ -107,7 +107,7 @@ Productivity
 serena-sheng
 
 **Contact Email**
-<!-- TODO：填公开显示的联系邮箱 -->
+serenaamphistritesheng@outlook.com
 
 **Support URL / Email**
 https://github.com/serena-sheng/mari-translator/issues
