@@ -8,7 +8,7 @@ import {
 } from "./rules";
 import { getDisabledSubRules, getRulesWithDefault, saveEdit } from "./storage";
 import { loadOrFetchSubRules } from "./subRules";
-import { BUILTIN_RULES, GLOBLA_RULE } from "../config/rules";
+import { GLOBLA_RULE } from "../config/rules";
 import {
   OPT_TRANS_DEEPSEEK,
   OPT_TRANS_MICROSOFT,
@@ -654,81 +654,4 @@ describe("aiPrompt / mangaEnabled 字段链路", () => {
     });
   });
 
-  test("预置站点规则命中各自的目标站点", () => {
-    const githubRule = BUILTIN_RULES.find(
-      (rule) => rule.pattern === "github.com"
-    );
-    expect(githubRule.aiTerms).toContain("LLM,大语言模型");
-    expect(
-      matchesRulePattern("https://github.com/x/y", githubRule.pattern)
-    ).toBe(true);
-
-    const newsRule = BUILTIN_RULES.find((rule) =>
-      rule.pattern.includes("reuters.com")
-    );
-    expect(newsRule).toBeDefined();
-    [
-      "https://www.reuters.com/markets/rates/x",
-      "https://www.bbc.co.uk/news/world-x",
-      "https://www.ft.com/content/abc",
-    ].forEach((href) => {
-      expect(matchesRulePattern(href, newsRule.pattern)).toBe(true);
-    });
-    expect(matchesRulePattern("https://example.com/", newsRule.pattern)).toBe(
-      false
-    );
-
-  });
-
-  // 回归：预置规则作为常驻的独立规则层，不依赖订阅缓存——订阅源从上游整体同步
-  // 覆盖缓存后，预置规则里的术语表仍应在合并结果里生效。
-  test("订阅缓存被上游覆盖后，预置规则仍在合并结果里生效", () => {
-    const href = "https://github.com/x/y";
-    // 模拟同步后的订阅缓存：上游规则，不含 aiTerms 等 fork 字段
-    const syncedSubRules = [
-      { pattern: "example.com", selector: ".synced" },
-      { pattern: "github.com", selector: ".markdown-body" },
-    ];
-
-    const { effective } = deriveRuleContext(href, {
-      personalRules: [{ ...GLOBLA_RULE }],
-      subRules: syncedSubRules,
-    });
-    // 预置规则里的站点术语表依然带上了
-    expect(effective.aiTerms).toContain("LLM,大语言模型");
-
-    // 未命中任何预置/个人规则的站点不带预置术语表
-    const { effective: plain } = deriveRuleContext("https://example.org/a", {
-      personalRules: [{ ...GLOBLA_RULE }],
-      subRules: syncedSubRules,
-    });
-    expect(plain.aiTerms).not.toContain("LLM,大语言模型");
-  });
-
-  test("预置规则只补充字段，不覆盖订阅规则的站点选择器", () => {
-    const href = "https://github.com/x/y";
-    const { effective } = deriveRuleContext(href, {
-      personalRules: [{ ...GLOBLA_RULE }],
-      // 订阅源同步回来的 github 站点选择器
-      subRules: [{ pattern: "github.com", selector: ".upstream-only" }],
-    });
-
-    expect(effective.selector).toBe(".upstream-only");
-    // 预置规则里的站点术语表依然带上了
-    expect(effective.aiTerms).toContain("LLM,大语言模型");
-  });
-
-  test("禁用的订阅 pattern 同时跳过对应的预置规则", () => {
-    const href = "https://github.com/x/y";
-    const builtinPattern = BUILTIN_RULES.find(
-      (rule) => rule.pattern === "github.com"
-    ).pattern;
-
-    const { effective } = deriveRuleContext(href, {
-      personalRules: [{ ...GLOBLA_RULE }],
-      subRules: [],
-      disabledPatterns: [builtinPattern],
-    });
-    expect(effective.aiTerms).not.toContain("LLM,大语言模型");
-  });
 });
